@@ -30,3 +30,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local conversation databases (never commit private history)
+*.sqlite
+*.sqlite-*

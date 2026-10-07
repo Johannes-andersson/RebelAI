@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { getModelInventory } from "./ollama-models.server";
 import { isSupportedModel } from "./model-config";
-import { ollamaUrl, resolveModelTag, modelErrorResponse } from "./ollama-config.server";
+import {
+  ollamaUrl,
+  resolveModelTag,
+  modelErrorResponse,
+  ModelServiceError,
+} from "./ollama-config.server";
 
 const chatRequest = z.object({
   modelId: z
@@ -41,18 +46,7 @@ export async function handleOllamaChat(request: Request): Promise<Response> {
   const envKey = `OLLAMA_MODEL_${modelId.replaceAll("-", "_").toUpperCase()}`;
   let model: string;
   try {
-    if (isSupportedModel(modelId)) model = resolveModelTag(modelId);
-    else {
-      const installed = (await getModelInventory(request.signal)).installed.find(
-        (m) => m.id === modelId,
-      );
-      if (!installed)
-        return Response.json(
-          { error: "This model is no longer installed. Refresh Models and select another model." },
-          { status: 404 },
-        );
-      model = installed.tag;
-    }
+    model = await resolveChatModelTag(modelId, request.signal);
   } catch (error) {
     return modelErrorResponse(error);
   }
@@ -91,4 +85,15 @@ export async function handleOllamaChat(request: Request): Promise<Response> {
   return new Response(upstream.body, {
     headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" },
   });
+}
+
+export async function resolveChatModelTag(modelId: string, signal: AbortSignal): Promise<string> {
+  if (isSupportedModel(modelId)) return resolveModelTag(modelId);
+  const installed = (await getModelInventory(signal)).installed.find((m) => m.id === modelId);
+  if (!installed)
+    throw new ModelServiceError(
+      "This model is no longer installed. Refresh Models and select another model.",
+      404,
+    );
+  return installed.tag;
 }

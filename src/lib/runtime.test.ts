@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { chatRuntime } from "./runtime";
 
-const request = { modelId: "qwen-7b", messages: [{ role: "user" as const, content: "Hello" }] };
+const request = {
+  modelId: "qwen-7b",
+  conversationId: "conversation",
+  messageId: "message",
+  content: "Hello",
+};
 const encoder = new TextEncoder();
 
 function streamResponse(parts: Uint8Array[]) {
@@ -69,8 +74,8 @@ describe("chat runtime", () => {
   it.each([
     ['{"message":{"content":"Partial"}}\n', "interrupted"],
     ['{"error":"model crashed"}\n', "model crashed"],
-    ["not json\n", "invalid streaming response"],
-    ["null\n", "invalid streaming response"],
+    ["not json\n", "Invalid streaming response"],
+    ["null\n", "Invalid streaming response"],
     ['{"done":true}\n', "no reply"],
   ])("rejects a bad stream: %s", async (text, message) => {
     mockReply(text);

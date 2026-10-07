@@ -15,8 +15,10 @@ import { Route as FilesRouteImport } from './routes/files'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ApiChatRouteImport } from './routes/api.chat'
+import { Route as ApiConversationsRouteImport } from './routes/api.conversations'
 import { Route as ApiModelsRouteImport } from './routes/api.models'
 import { Route as ApiSystemRouteImport } from './routes/api.system'
+import { Route as ApiConversationsIdRouteImport } from './routes/api.conversations.$id'
 import { Route as ApiModelsPullRouteImport } from './routes/api.models.pull'
 
 const IndexRoute = IndexRouteImport.update({
@@ -49,6 +51,11 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiConversationsRoute = ApiConversationsRouteImport.update({
+  id: '/api/conversations',
+  path: '/api/conversations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiModelsRoute = ApiModelsRouteImport.update({
   id: '/api/models',
   path: '/api/models',
@@ -58,6 +65,11 @@ const ApiSystemRoute = ApiSystemRouteImport.update({
   id: '/api/system',
   path: '/api/system',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ApiConversationsIdRoute = ApiConversationsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiConversationsRoute,
 } as any)
 const ApiModelsPullRoute = ApiModelsPullRouteImport.update({
   id: '/pull',
@@ -72,8 +84,10 @@ export interface FileRoutesByFullPath {
   '/models': typeof ModelsRoute
   '/settings': typeof SettingsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/models': typeof ApiModelsRouteWithChildren
   '/api/system': typeof ApiSystemRoute
+  '/api/conversations/$id': typeof ApiConversationsIdRoute
   '/api/models/pull': typeof ApiModelsPullRoute
 }
 export interface FileRoutesByTo {
@@ -83,8 +97,10 @@ export interface FileRoutesByTo {
   '/models': typeof ModelsRoute
   '/settings': typeof SettingsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/models': typeof ApiModelsRouteWithChildren
   '/api/system': typeof ApiSystemRoute
+  '/api/conversations/$id': typeof ApiConversationsIdRoute
   '/api/models/pull': typeof ApiModelsPullRoute
 }
 export interface FileRoutesById {
@@ -95,8 +111,10 @@ export interface FileRoutesById {
   '/models': typeof ModelsRoute
   '/settings': typeof SettingsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/models': typeof ApiModelsRouteWithChildren
   '/api/system': typeof ApiSystemRoute
+  '/api/conversations/$id': typeof ApiConversationsIdRoute
   '/api/models/pull': typeof ApiModelsPullRoute
 }
 export interface FileRouteTypes {
@@ -108,8 +126,10 @@ export interface FileRouteTypes {
     | '/models'
     | '/settings'
     | '/api/chat'
+    | '/api/conversations'
     | '/api/models'
     | '/api/system'
+    | '/api/conversations/$id'
     | '/api/models/pull'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -119,8 +139,10 @@ export interface FileRouteTypes {
     | '/models'
     | '/settings'
     | '/api/chat'
+    | '/api/conversations'
     | '/api/models'
     | '/api/system'
+    | '/api/conversations/$id'
     | '/api/models/pull'
   id:
     | '__root__'
@@ -130,8 +152,10 @@ export interface FileRouteTypes {
     | '/models'
     | '/settings'
     | '/api/chat'
+    | '/api/conversations'
     | '/api/models'
     | '/api/system'
+    | '/api/conversations/$id'
     | '/api/models/pull'
   fileRoutesById: FileRoutesById
 }
@@ -142,6 +166,7 @@ export interface RootRouteChildren {
   ModelsRoute: typeof ModelsRoute
   SettingsRoute: typeof SettingsRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiConversationsRoute: typeof ApiConversationsRouteWithChildren
   ApiModelsRoute: typeof ApiModelsRouteWithChildren
   ApiSystemRoute: typeof ApiSystemRoute
 }
@@ -190,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/conversations': {
+      id: '/api/conversations'
+      path: '/api/conversations'
+      fullPath: '/api/conversations'
+      preLoaderRoute: typeof ApiConversationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/models': {
       id: '/api/models'
       path: '/api/models'
@@ -204,6 +236,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSystemRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/conversations/$id': {
+      id: '/api/conversations/$id'
+      path: '/$id'
+      fullPath: '/api/conversations/$id'
+      preLoaderRoute: typeof ApiConversationsIdRouteImport
+      parentRoute: typeof ApiConversationsRoute
+    }
     '/api/models/pull': {
       id: '/api/models/pull'
       path: '/pull'
@@ -213,6 +252,17 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface ApiConversationsRouteChildren {
+  ApiConversationsIdRoute: typeof ApiConversationsIdRoute
+}
+
+const ApiConversationsRouteChildren: ApiConversationsRouteChildren = {
+  ApiConversationsIdRoute: ApiConversationsIdRoute,
+}
+
+const ApiConversationsRouteWithChildren =
+  ApiConversationsRoute._addFileChildren(ApiConversationsRouteChildren)
 
 interface ApiModelsRouteChildren {
   ApiModelsPullRoute: typeof ApiModelsPullRoute
@@ -233,6 +283,7 @@ const rootRouteChildren: RootRouteChildren = {
   ModelsRoute: ModelsRoute,
   SettingsRoute: SettingsRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiConversationsRoute: ApiConversationsRouteWithChildren,
   ApiModelsRoute: ApiModelsRouteWithChildren,
   ApiSystemRoute: ApiSystemRoute,
 }

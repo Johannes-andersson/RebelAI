@@ -42,8 +42,18 @@ export interface ChatMessage {
   content: string;
 }
 
-export interface Conversation {
+export interface StoredMessage extends ChatMessage {
+  conversationId: string;
+  createdAt: string;
+  status: "pending" | "complete" | "interrupted" | "error";
+}
+export interface ConversationSummary {
   id: string;
   title: string;
-  messages: ChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+  modelTag: string | null;
+}
+export interface Conversation extends ConversationSummary {
+  messages: StoredMessage[];
 }

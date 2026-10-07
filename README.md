@@ -15,7 +15,7 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Prefer working locally? You need Node.js 22.13 or newer and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
 
 ```sh
 git clone <this-repository-url>
@@ -49,8 +49,7 @@ the corresponding environment variable in `.env.local` or the server's shell:
 | Llama 70B    | `llama3.1:70b`     | `OLLAMA_MODEL_LLAMA_70B` |
 
 Use matching tags to keep the UI labels and memory estimates accurate.
-Onboarding and Models page installation/removal are real. Settings and sidebar
-history remain prototype features. The Advanced settings
+Onboarding and Models page installation/removal are real. Settings remain prototype features; conversation history is stored locally in SQLite. The Advanced settings
 API address is still a placeholder; configure the actual address with the
 environment variable above.
 
@@ -58,13 +57,14 @@ environment variable above.
 
 `ChatPage → ChatRuntime → POST /api/chat → Ollama /api/chat`
 
-`ChatRuntime` accepts a model ID, the current conversation, a text-chunk callback,
-and an abort signal. The Ollama-specific request and stream handling are isolated
+`ChatRuntime` accepts a model ID, conversation/message IDs, the new user text,
+a text-chunk callback, and an abort signal. The server loads prior context. The Ollama-specific request and stream handling are isolated
 from the chat UI, so another provider can implement the same interface later.
-Conversation messages are held only in page state, with no persistent memory.
-Starting a new chat or leaving the page cancels the current request.
+Conversation messages are saved to local SQLite storage by the server.
+Starting a new chat or leaving the page cancels the current request and marks
+its partial reply incomplete.
 
-The API forwards the response stream without buffering it. Errors such as an
+The API checkpoints streamed text to SQLite while forwarding it progressively. Errors such as an
 unavailable Ollama service or missing model are shown above the existing composer.
 A partial response remains visible if streaming fails, but is excluded from the
 next request's conversation context.
@@ -193,6 +193,55 @@ Catalog metadata and default model tags live together in `src/lib/model-config.t
 `ChatRuntime` is unchanged; for installed models outside the catalog, the server
 verifies the namespaced model ID against Ollama's inventory before sending chat.
 The same HTTP flow works on macOS and Windows without shell deletion commands.
+
+## Persistent local conversations
+
+Chats use Node's built-in `node:sqlite` module (Node **22.13+**; early Node 22
+versions label this API experimental). No ORM, database service, or new package is
+required. A conversation has an ID, title, timestamps, and its latest selected
+model tag. Messages have an ID, conversation ID, role, text, timestamp, and status.
+
+The database is `conversations.sqlite` in:
+
+- macOS: `~/Library/Application Support/Rebel AI/`
+- Windows: `%LOCALAPPDATA%\Rebel AI\`
+- Linux: `$XDG_DATA_HOME/rebel-ai/`, or `~/.local/share/rebel-ai/`
+
+Override the directory with server-only `REBEL_AI_DATA_DIR` in `.env.local` for
+development, or in the environment when starting the production server. Builds
+and restarts do not erase the database. Run **one app server per data directory**;
+use a separate temporary directory for tests. Database files and WAL sidecars are
+ignored by Git. Data remains on disk until the user deletes the conversations;
+there is no cloud database, account, sync, embedding, or semantic memory.
+
+`Sidebar/chat → conversation client → local API → ConversationRepository → SQLite`
+
+- `GET/POST /api/conversations` lists/creates records.
+- `GET/PATCH/DELETE /api/conversations/:id` loads history, updates the model tag,
+  or deletes a conversation and its messages in SQLite.
+- `POST /api/chat` receives a conversation ID, unique message ID, model ID, and
+  new user message. The server reads prior context from SQLite.
+
+Opening `/chat` creates a durable empty conversation and puts its ID in the URL.
+Reloading that URL opens the same history. **New Chat** creates another record.
+The sidebar shows actual titles and opens each conversation's full history.
+Titles use the first user message, with whitespace collapsed and a 60-character
+limit, without an extra model request. Deletion requires confirmation. Deleting
+the open conversation returns to a fresh empty conversation.
+
+The server saves the user message and a pending assistant record atomically
+before calling Ollama. Streamed text is checkpointed before it is forwarded, and
+the completed reply is committed before the browser receives `done`. Cancelling,
+leaving the page, a broken stream, or a provider failure preserves incomplete
+history with a visible label. Incomplete assistant replies are excluded from
+later model context. On server restart, remaining pending replies become
+interrupted; abrupt termination retains the last committed checkpoint. A unique
+pending-reply constraint prevents concurrent generations in one conversation.
+
+The selected model tag is stored and restored per conversation. If that model
+has been removed, history still opens and the user can select a replacement.
+SQLite stores plain local text, relying on the computer's normal account/file
+permissions; this milestone does not add database encryption or backup/export.
 
 ### Checks
 

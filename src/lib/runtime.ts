@@ -1,8 +1,9 @@
-import type { ChatMessage } from "./types";
-
+import { readChatStream } from "./chat-stream";
 export interface ChatRequest {
   modelId: string;
-  messages: Pick<ChatMessage, "role" | "content">[];
+  conversationId: string;
+  messageId: string;
+  content: string;
 }
 
 // The UI depends only on this interface. Another provider can implement it later.
@@ -35,56 +36,8 @@ export const chatRuntime: ChatRuntime = {
     }
     if (!response.body) throw new Error("The chat server returned an empty response.");
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let pending = "";
-    let finished = false;
-    let hasText = false;
-
-    function consume(line: string) {
-      if (!line.trim()) return;
-      let event;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        throw new Error("Ollama returned an invalid streaming response. Please try again.");
-      }
-      if (!event || typeof event !== "object") {
-        throw new Error("Ollama returned an invalid streaming response. Please try again.");
-      }
-      if (typeof event.error === "string") throw new Error(`Ollama: ${event.error}`);
-      if (typeof event.message?.content === "string" && event.message.content) {
-        hasText = true;
-        onToken(event.message.content);
-      }
-      if (event.done === true) finished = true;
-    }
-
-    try {
-      while (!finished) {
-        signal?.throwIfAborted();
-        const { value, done } = await reader.read().catch((error: unknown) => {
-          if (signal?.aborted) throw error;
-          throw new Error("Ollama's response was interrupted. Please try again.");
-        });
-        signal?.throwIfAborted();
-        pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
-        const lines = pending.split("\n");
-        pending = lines.pop() ?? "";
-        for (const line of lines) {
-          consume(line);
-          if (finished) break;
-        }
-        if (done) {
-          if (!finished) consume(pending);
-          break;
-        }
-      }
-      if (!finished) throw new Error("Ollama's response was interrupted. Please try again.");
-      if (!hasText) throw new Error("Ollama returned no reply. Please try again.");
-    } finally {
-      await reader.cancel().catch(() => {});
-      reader.releaseLock();
+    for await (const event of readChatStream(response.body, signal)) {
+      if (event.text) onToken(event.text);
     }
   },
 };
