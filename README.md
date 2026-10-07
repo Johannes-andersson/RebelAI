@@ -29,13 +29,13 @@ npm run dev
 1. Install and open [Ollama](https://ollama.com), or run `ollama serve` if you use
    the command-line version. The app and Ollama must run on the same computer
    with the default configuration.
-2. Make sure the default model is installed: `ollama pull qwen2.5:7b`.
-   Use `ollama list` to check what is already available.
+2. Open `/` to detect hardware, check the recommended model, and install it
+   through onboarding. Already installed models can go straight to chat.
 3. Optionally copy `.env.example` to `.env.local` and change `OLLAMA_BASE_URL`
    (default: `http://127.0.0.1:11434`). Restart the development server after edits.
    These are server-only settings; do not prefix them with `VITE_`.
-4. Run `npm run dev`, then open `/chat` on the local URL printed by Vite.
-   The existing Qwen 7B selection is ready to send messages.
+4. Run `npm run dev`, then open the local URL printed by Vite. Onboarding selects
+   the installed model for chat. `/chat` also refreshes its selector from Ollama.
 
 The existing selector maps to these Ollama tags. Each tag can be overridden by
 the corresponding environment variable in `.env.local` or the server's shell:
@@ -48,10 +48,10 @@ the corresponding environment variable in `.env.local` or the server's shell:
 | Qwen 14B     | `qwen2.5:14b`      | `OLLAMA_MODEL_QWEN_14B`  |
 | Llama 70B    | `llama3.1:70b`     | `OLLAMA_MODEL_LLAMA_70B` |
 
-Use matching tags to keep the UI labels accurate. Model installation,
-settings, and sidebar history are still prototype features. Installing
-a model in the UI does not download it into Ollama. The Advanced settings API
-address is also still a placeholder; configure the actual address with the
+Use matching tags to keep the UI labels and memory estimates accurate.
+Onboarding installation is real; the separate Models page management buttons,
+settings, and sidebar history remain prototype features. The Advanced settings
+API address is still a placeholder; configure the actual address with the
 environment variable above.
 
 ### Request flow
@@ -114,9 +114,50 @@ HOST=127.0.0.1 PORT=3000 node .output/server/index.mjs
 ```
 
 For this standalone server, pass any `OLLAMA_*` configuration in its environment.
-Cloud/edge deployments are not supported for local hardware detection. The
-recommendation does not check installed models or download anything. The later
-installation screens are still the original simulated prototype.
+Cloud/edge deployments are not supported for local hardware detection.
+
+### Model installation
+
+`Hardware tier → model-config.ts → catalog model ID → configured Ollama tag`
+
+`src/lib/model-config.ts` keeps the small tier-to-model mapping and default Ollama
+model tags together. Small and Medium map to Qwen 7B (`qwen2.5:7b`); Large maps to
+Qwen 14B (`qwen2.5:14b`). The existing memory-fit checks still apply. Change this
+mapping to change future recommendations; the onboarding screens need no changes.
+Server environment overrides apply to status checks, pulls, and chat consistently.
+
+`Onboarding → ModelManager → GET /api/models → Ollama GET /api/tags`
+
+The exact tag must be installed: a different size in the same family does not
+count. An omitted tag is normalized to `:latest`. Unrecognized installed models
+are left out of the existing catalog selector. An installed recommendation offers
+**Start chatting** immediately; a missing one offers **Install Model**.
+
+`Onboarding → ModelManager → POST /api/models/pull → Ollama POST /api/pull`
+
+The server streams Ollama's newline-delimited progress directly to the browser.
+The progress bar shows actual bytes for the current file (Ollama models have
+multiple files), followed by verification. There are no simulated timers, speeds,
+or completion buttons. After success, another tags check must confirm the exact
+model before the app selects it for chat. The `ModelManager` interface keeps
+installation separate from screens and the existing `ChatRuntime` interface.
+
+**Cancel** aborts the stream and upstream request. Ollama may retain partial files
+for a retry; other clients downloading the same model may continue. Leaving the
+setup page also aborts its request. Retry is available after cancellation or errors.
+Disk-space messages from Ollama are translated into a clear instruction to free
+space on Ollama's drive. There is no speculative free-space check because Ollama
+can use a custom model directory or a different computer.
+
+The HTTP installation flow is the same on macOS and Windows. If Ollama cannot be
+reached, the server checks executable presence in PATH and standard macOS/Windows
+installation locations without running a shell or installing software. This helps
+distinguish an app that is not responding from one that was not found. Custom
+installation paths cannot be ruled out, and the error text explains that. Users
+must install and start Ollama itself; Rebel AI installs models, not the runtime.
+
+The model choice lives in app state for the current session. Reloading chat reads
+Ollama's installed models again. No browser persistence or cloud services were added.
 
 ### Checks
 

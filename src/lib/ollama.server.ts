@@ -1,16 +1,9 @@
 import { z } from "zod";
-
-// UI catalog IDs are deliberately separate from provider-specific model tags.
-const modelTags = {
-  "qwen-7b": "qwen2.5:7b",
-  "llama-8b": "llama3.1:8b",
-  "gemma-9b": "gemma2:9b",
-  "qwen-14b": "qwen2.5:14b",
-  "llama-70b": "llama3.1:70b",
-} as const;
+import { isSupportedModel } from "./model-config";
+import { ollamaUrl, resolveModelTag, modelErrorResponse } from "./ollama-config.server";
 
 const chatRequest = z.object({
-  modelId: z.enum(["qwen-7b", "llama-8b", "gemma-9b", "qwen-14b", "llama-70b"]),
+  modelId: z.string().refine(isSupportedModel),
   messages: z
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1) }))
     .min(1),
@@ -33,21 +26,16 @@ export async function handleOllamaChat(request: Request): Promise<Response> {
     );
   }
 
-  const baseUrl = process.env["OLLAMA_BASE_URL"]?.trim() || "http://127.0.0.1:11434";
   let url: URL;
   try {
-    url = new URL(`${baseUrl.replace(/\/+$/, "")}/api/chat`);
-    if (!["http:", "https:"].includes(url.protocol)) throw new Error("Invalid protocol");
-  } catch {
-    return Response.json(
-      { error: "OLLAMA_BASE_URL must be a valid HTTP or HTTPS URL." },
-      { status: 500 },
-    );
+    url = ollamaUrl("chat");
+  } catch (error) {
+    return modelErrorResponse(error);
   }
 
   const { modelId, messages } = parsed.data;
   const envKey = `OLLAMA_MODEL_${modelId.replaceAll("-", "_").toUpperCase()}`;
-  const model = process.env[envKey]?.trim() || modelTags[modelId];
+  const model = resolveModelTag(modelId);
   let upstream: Response;
   try {
     upstream = await fetch(url, {

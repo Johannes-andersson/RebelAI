@@ -8,7 +8,7 @@ interface AppState {
   activeModelId: string;
 }
 
-let state: AppState = { installed: ["qwen-7b"], running: "qwen-7b", activeModelId: "qwen-7b" };
+let state: AppState = { installed: [], running: null, activeModelId: "qwen-7b" };
 const listeners = new Set<() => void>();
 
 export const appStore = {

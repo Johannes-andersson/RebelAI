@@ -1,8 +1,22 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { chatRuntime } from "@/lib/runtime";
 import { Route } from "@/routes/chat";
+
+import { modelManager } from "@/lib/model-manager";
+import { appStore } from "@/lib/store";
+
+vi.mock("@/lib/model-manager", () => ({ modelManager: { check: vi.fn() } }));
+beforeEach(() => {
+  appStore.set({ installed: ["qwen-7b"], activeModelId: "qwen-7b", running: "qwen-7b" });
+  vi.mocked(modelManager.check).mockResolvedValue({
+    modelId: "qwen-7b",
+    tag: "qwen2.5:7b",
+    installed: true,
+    installedIds: ["qwen-7b"],
+  });
+});
 
 vi.mock("@/lib/runtime", () => ({ chatRuntime: { streamReply: vi.fn() } }));
 vi.mock("@/components/app-shell", () => ({

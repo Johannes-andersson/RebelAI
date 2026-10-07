@@ -6,6 +6,7 @@ import { getModel, models } from "@/lib/mock-data";
 import { chatRuntime } from "@/lib/runtime";
 import { appStore, useAppState } from "@/lib/store";
 import type { ChatMessage } from "@/lib/types";
+import { modelManager } from "@/lib/model-manager";
 
 export const Route = createFileRoute("/chat")({
   head: () => ({
@@ -31,6 +32,28 @@ function ChatPage() {
   const requestRef = useRef<AbortController | null>(null);
   const failedReplies = useRef(new Set<string>());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const selected = appStore.get().activeModelId;
+    void modelManager
+      .check(selected, controller.signal)
+      .then((status) => {
+        if (controller.signal.aborted) return;
+        const current = appStore.get().activeModelId;
+        const next = status.installedIds.includes(current) ? current : status.installedIds[0];
+        appStore.set({
+          installed: status.installedIds,
+          running: next ?? null,
+          ...(next ? { activeModelId: next } : {}),
+        });
+      })
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted)
+          setError(cause instanceof Error ? cause.message : "Could not check installed models.");
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => () => requestRef.current?.abort(), []);
 

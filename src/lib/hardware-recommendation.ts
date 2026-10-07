@@ -1,4 +1,5 @@
 import { models } from "./mock-data";
+import { recommendedModelIds } from "./model-config";
 import type { HardwareRecommendation } from "./types";
 
 // A conservative estimate, not a benchmark or a guarantee of available RAM/VRAM.
@@ -9,7 +10,7 @@ export function recommendHardware(memoryBytes: number): HardwareRecommendation {
   const memoryGB = memoryBytes / 2 ** 30;
   const tier = memoryGB < 16 ? "Small" : memoryGB < 32 ? "Medium" : "Large";
   const budgetGB = Math.max(0, memoryGB - Math.max(4, memoryGB * 0.25));
-  const preferredId = tier === "Large" ? "qwen-14b" : "qwen-7b";
+  const preferredId = recommendedModelIds[tier];
   const preferred = models.find((model) => model.id === preferredId);
   const modelId = preferred && preferred.memoryGB <= budgetGB ? preferred.id : null;
   const fits = Object.fromEntries(
@@ -26,6 +27,6 @@ export function recommendHardware(memoryBytes: number): HardwareRecommendation {
     fits,
     reason: modelId
       ? "Memory-based estimate, reserving at least 4 GB or 25% of RAM for your system. Actual speed and GPU acceleration have not been tested."
-      : "No suitable model in this catalog leaves enough memory for your system. A smaller model is needed; installation is not available yet.",
+      : "No suitable model in this catalog leaves enough memory for your system. A smaller model is needed.",
   };
 }
