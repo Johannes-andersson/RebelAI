@@ -121,3 +121,44 @@ describe("model manager", () => {
     await expect(modelManager.check(model.modelId)).rejects.toThrow("invalid model status");
   });
 });
+
+it("lists real inventory through the provider interface", async () => {
+  const inventory = {
+    installed: [
+      { id: "ollama:custom:latest", tag: "custom:latest", name: "custom:latest", sizeBytes: 456 },
+    ],
+    supported: [],
+  };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(inventory)));
+  expect(await modelManager.list()).toEqual(inventory);
+});
+it("sends the confirmed tag for deletion and returns verified inventory", async () => {
+  const inventory = { installed: [], supported: [] };
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(inventory)));
+  expect(await modelManager.remove("my/custom:latest")).toEqual(inventory);
+  expect(fetch).toHaveBeenCalledWith(
+    "/api/models",
+    expect.objectContaining({
+      method: "DELETE",
+      body: JSON.stringify({ tag: "my/custom:latest" }),
+    }),
+  );
+});
+it("reports deletion failure", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ error: "Ollama could not remove the model" }, { status: 502 }),
+      ),
+  );
+  await expect(modelManager.remove("custom:latest")).rejects.toThrow("could not remove");
+});
+it("rejects malformed inventory rather than fabricating installed state", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(Response.json({ installed: [{ sizeBytes: -1 }], supported: [] })),
+  );
+  await expect(modelManager.list()).rejects.toThrow("invalid model inventory");
+});

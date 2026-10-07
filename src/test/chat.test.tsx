@@ -7,15 +7,16 @@ import { Route } from "@/routes/chat";
 import { modelManager } from "@/lib/model-manager";
 import { appStore } from "@/lib/store";
 
-vi.mock("@/lib/model-manager", () => ({ modelManager: { check: vi.fn() } }));
+vi.mock("@/lib/model-manager", () => ({ modelManager: { list: vi.fn() } }));
+const qwen = { id: "qwen-7b", tag: "qwen2.5:7b", name: "Qwen 7B", sizeBytes: 5_000_000_000 };
 beforeEach(() => {
-  appStore.set({ installed: ["qwen-7b"], activeModelId: "qwen-7b", running: "qwen-7b" });
-  vi.mocked(modelManager.check).mockResolvedValue({
-    modelId: "qwen-7b",
-    tag: "qwen2.5:7b",
-    installed: true,
-    installedIds: ["qwen-7b"],
+  appStore.set({
+    installed: ["qwen-7b"],
+    installedModels: [qwen],
+    activeModelId: "qwen-7b",
+    running: "qwen-7b",
   });
+  vi.mocked(modelManager.list).mockResolvedValue({ installed: [qwen], supported: [] });
 });
 
 vi.mock("@/lib/runtime", () => ({ chatRuntime: { streamReply: vi.fn() } }));
@@ -108,4 +109,38 @@ describe("chat integration", () => {
     unmount();
     expect(currentSignal.aborted).toBe(true);
   });
+});
+
+it("uses an installed model outside the supported catalog in chat", async () => {
+  const custom = {
+    id: "ollama:custom:latest",
+    tag: "custom:latest",
+    name: "custom:latest",
+    sizeBytes: 123,
+  };
+  appStore.set({ activeModelId: custom.id, installedModels: [custom], installed: [custom.id] });
+  vi.mocked(modelManager.list).mockResolvedValue({ installed: [custom], supported: [] });
+  vi.mocked(chatRuntime.streamReply).mockResolvedValue();
+  render(<ChatPage />);
+  await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue(custom.id));
+  send("Hello custom model");
+  await waitFor(() =>
+    expect(chatRuntime.streamReply).toHaveBeenCalledWith(
+      expect.objectContaining({ modelId: custom.id }),
+      expect.any(Function),
+      expect.any(AbortSignal),
+    ),
+  );
+});
+
+it("clears a deleted last selection and disables sending", async () => {
+  vi.mocked(modelManager.list).mockResolvedValue({ installed: [], supported: [] });
+  render(<ChatPage />);
+  await screen.findByText("No installed model");
+  expect(appStore.get().activeModelId).toBe("");
+  fireEvent.change(screen.getByPlaceholderText("Message Rebel AI..."), {
+    target: { value: "Hello" },
+  });
+  expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  expect(chatRuntime.streamReply).not.toHaveBeenCalled();
 });

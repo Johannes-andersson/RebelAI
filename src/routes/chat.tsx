@@ -2,9 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { StatusDot } from "@/components/brand";
-import { getModel, models } from "@/lib/mock-data";
+
 import { chatRuntime } from "@/lib/runtime";
-import { appStore, useAppState } from "@/lib/store";
+import { appStore, useAppState, applyModelInventory } from "@/lib/store";
 import type { ChatMessage } from "@/lib/types";
 import { modelManager } from "@/lib/model-manager";
 
@@ -23,8 +23,9 @@ export const Route = createFileRoute("/chat")({
 const suggestions = ["Help me code something", "Explain something", "Write something", "Brainstorm an idea"];
 
 function ChatPage() {
-  const { activeModelId, installed } = useAppState();
-  const model = getModel(activeModelId);
+  const { activeModelId, installedModels } = useAppState();
+  const model = installedModels.find(m => m.id === activeModelId);
+  const modelName = model?.name ?? "No model selected";
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
@@ -35,18 +36,11 @@ function ChatPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const selected = appStore.get().activeModelId;
     void modelManager
-      .check(selected, controller.signal)
+      .list(controller.signal)
       .then((status) => {
         if (controller.signal.aborted) return;
-        const current = appStore.get().activeModelId;
-        const next = status.installedIds.includes(current) ? current : status.installedIds[0];
-        appStore.set({
-          installed: status.installedIds,
-          running: next ?? null,
-          ...(next ? { activeModelId: next } : {}),
-        });
+        applyModelInventory(status);
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted)
@@ -63,7 +57,7 @@ function ChatPage() {
 
   async function send(text: string) {
     const content = text.trim();
-    if (!content || requestRef.current) return;
+    if (!content || requestRef.current || !model) return;
     const controller = new AbortController();
     requestRef.current = controller;
     const aiId = crypto.randomUUID();
@@ -110,15 +104,16 @@ function ChatPage() {
       <header className="flex items-center justify-between border-b border-border px-8 py-4">
         <div>
           <h1 className="font-medium">Rebel AI</h1>
-          <p className="text-xs text-muted-foreground">{model.name} • Local</p>
+          <p className="text-xs text-muted-foreground">{modelName} • Local</p>
         </div>
         <select
           value={activeModelId}
-          disabled={!!streaming}
+          disabled={!!streaming || !model}
           onChange={(e) => appStore.set({ activeModelId: e.target.value, running: e.target.value })}
           className="h-9 rounded-md border border-input bg-panel px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
-          {models.filter((m) => installed.includes(m.id)).map((m) => (
+          {!model && <option value="">No installed model</option>}
+          {installedModels.map((m) => (
             <option key={m.id} value={m.id}>{m.name}</option>
           ))}
         </select>
@@ -155,6 +150,7 @@ function ChatPage() {
       </div>
 
       <div className="mx-auto w-full max-w-3xl px-8 pb-6">
+        {!model && <p className="mb-3 text-sm text-muted-foreground">Install or select a model on the <a href="/models" className="underline">Models page</a> to start chatting.</p>}
         {error && <p role="alert" className="mb-3 text-sm text-destructive">{error}</p>}
         <form
           onSubmit={(e) => {
@@ -181,12 +177,12 @@ function ChatPage() {
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m21 12-8.6 8.6a5 5 0 0 1-7-7l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.3-2.3l8-8" /></svg>
             </button>
             <div className="flex items-center gap-3">
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><StatusDot /> {model.name}</span>
-              <button type="submit" disabled={!input.trim() || !!streaming} aria-label="Send" className="btn-primary h-8 w-8 p-0">↑</button>
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><StatusDot /> {modelName}</span>
+              <button type="submit" disabled={!input.trim() || !!streaming || !model} aria-label="Send" className="btn-primary h-8 w-8 p-0">↑</button>
             </div>
           </div>
         </form>
-        <p className="mt-3 text-center text-xs text-subtle">{model.name} • Running locally</p>
+        <p className="mt-3 text-center text-xs text-subtle">{modelName}{model ? " • Selected for local chat" : ""}</p>
       </div>
     </AppShell>
   );

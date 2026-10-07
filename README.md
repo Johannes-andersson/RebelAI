@@ -49,8 +49,8 @@ the corresponding environment variable in `.env.local` or the server's shell:
 | Llama 70B    | `llama3.1:70b`     | `OLLAMA_MODEL_LLAMA_70B` |
 
 Use matching tags to keep the UI labels and memory estimates accurate.
-Onboarding installation is real; the separate Models page management buttons,
-settings, and sidebar history remain prototype features. The Advanced settings
+Onboarding and Models page installation/removal are real. Settings and sidebar
+history remain prototype features. The Advanced settings
 API address is still a placeholder; configure the actual address with the
 environment variable above.
 
@@ -129,8 +129,9 @@ Server environment overrides apply to status checks, pulls, and chat consistentl
 `Onboarding → ModelManager → GET /api/models → Ollama GET /api/tags`
 
 The exact tag must be installed: a different size in the same family does not
-count. An omitted tag is normalized to `:latest`. Unrecognized installed models
-are left out of the existing catalog selector. An installed recommendation offers
+count. An omitted tag is normalized to `:latest`. Models installed outside the catalog appear by their exact tag on the Models
+page and in the chat selector. Ollama reports an error if a selected model does
+not support chat. An installed recommendation offers
 **Start chatting** immediately; a missing one offers **Install Model**.
 
 `Onboarding → ModelManager → POST /api/models/pull → Ollama POST /api/pull`
@@ -158,6 +159,40 @@ must install and start Ollama itself; Rebel AI installs models, not the runtime.
 
 The model choice lives in app state for the current session. Reloading chat reads
 Ollama's installed models again. No browser persistence or cloud services were added.
+
+## Models page
+
+Open `/models` to load Ollama's actual installed inventory. Installed rows show
+exact tags and sizes reported by Ollama (decimal GB), with a **Selected for chat**
+label for the current choice. Selection does not claim a model is loaded in memory.
+The available cards use the same catalog, tag configuration, and memory-fit
+estimates as onboarding. They show every supported uninstalled model, including
+those marked not recommended for the current computer.
+
+- **Use in chat** selects an installed model for the current app session.
+- **Install** reuses the existing `ModelManager.check/install` flow, streaming
+  per-file progress with cancellation and verification. Existing selections are
+  preserved when another model is installed.
+- **Remove** opens a confirmation dialog naming the exact tag. Only confirmation
+  sends a removal request. The app refreshes the inventory after removal and
+  selects another installed model if needed; when none remain, chat cannot send.
+- **Refresh** reloads changes made outside Rebel AI. Failed refreshes mark existing
+  rows as last-known data and disable changes until the service is reachable.
+
+`Models page → ModelManager.list/remove → GET/DELETE /api/models → Ollama /api/tags or /api/delete`
+
+The server deletes the confirmed tag, checks the resulting inventory, and returns
+that snapshot. It never reinterprets a confirmed tag using a newer catalog mapping.
+The page runs one install/removal at a time, cancels its install on navigation, and
+rechecks inventory after ambiguous failures. No running-process management or
+model-settings controls are simulated on this page.
+
+Catalog metadata and default model tags live together in `src/lib/model-config.ts`;
+`mock-data.ts` re-exports catalog helpers for existing screens. The shared
+`applyModelInventory` selection rule handles refreshes and removals consistently.
+`ChatRuntime` is unchanged; for installed models outside the catalog, the server
+verifies the namespaced model ID against Ollama's inventory before sending chat.
+The same HTTP flow works on macOS and Windows without shell deletion commands.
 
 ### Checks
 

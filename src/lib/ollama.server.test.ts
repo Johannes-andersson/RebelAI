@@ -108,3 +108,21 @@ describe("Ollama server adapter", () => {
     expect((await response.json()).error).toContain("OLLAMA_BASE_URL");
   });
 });
+
+it("resolves a selected external installed model before sending chat", async () => {
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ models: [{ name: "custom:latest", size: 123 }] }))
+    .mockResolvedValueOnce(new Response('{"done":true}\n'));
+  vi.stubGlobal("fetch", fetcher);
+  const res = await handleOllamaChat(request({ ...payload, modelId: "ollama:custom:latest" }));
+  expect(res.status).toBe(200);
+  expect(JSON.parse(fetcher.mock.calls[1]![1].body).model).toBe("custom:latest");
+});
+it("rejects external model IDs that are no longer installed", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ models: [] })));
+  expect(
+    (await handleOllamaChat(request({ ...payload, modelId: "ollama:missing:latest" }))).status,
+  ).toBe(404);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});

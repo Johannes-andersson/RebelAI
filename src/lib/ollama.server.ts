@@ -1,9 +1,13 @@
 import { z } from "zod";
+import { getModelInventory } from "./ollama-models.server";
 import { isSupportedModel } from "./model-config";
 import { ollamaUrl, resolveModelTag, modelErrorResponse } from "./ollama-config.server";
 
 const chatRequest = z.object({
-  modelId: z.string().refine(isSupportedModel),
+  modelId: z
+    .string()
+    .max(512)
+    .refine((id) => isSupportedModel(id) || id.startsWith("ollama:")),
   messages: z
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1) }))
     .min(1),
@@ -35,7 +39,23 @@ export async function handleOllamaChat(request: Request): Promise<Response> {
 
   const { modelId, messages } = parsed.data;
   const envKey = `OLLAMA_MODEL_${modelId.replaceAll("-", "_").toUpperCase()}`;
-  const model = resolveModelTag(modelId);
+  let model: string;
+  try {
+    if (isSupportedModel(modelId)) model = resolveModelTag(modelId);
+    else {
+      const installed = (await getModelInventory(request.signal)).installed.find(
+        (m) => m.id === modelId,
+      );
+      if (!installed)
+        return Response.json(
+          { error: "This model is no longer installed. Refresh Models and select another model." },
+          { status: 404 },
+        );
+      model = installed.tag;
+    }
+  } catch (error) {
+    return modelErrorResponse(error);
+  }
   let upstream: Response;
   try {
     upstream = await fetch(url, {
