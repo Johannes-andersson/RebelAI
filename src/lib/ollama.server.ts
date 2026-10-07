@@ -1,3 +1,4 @@
+import { embeddingModel } from "./embedding-config.server";
 import { z } from "zod";
 import { getModelInventory } from "./ollama-models.server";
 import { isSupportedModel } from "./model-config";
@@ -14,7 +15,7 @@ const chatRequest = z.object({
     .max(512)
     .refine((id) => isSupportedModel(id) || id.startsWith("ollama:")),
   messages: z
-    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().min(1) }))
+    .array(z.object({ role: z.enum(["system", "user", "assistant"]), content: z.string().min(1) }))
     .min(1),
 });
 
@@ -54,6 +55,7 @@ export async function handleOllamaChat(request: Request): Promise<Response> {
   try {
     upstream = await fetch(url, {
       method: "POST",
+      redirect: "error",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ model, messages, stream: true }),
       signal: request.signal,
@@ -88,7 +90,12 @@ export async function handleOllamaChat(request: Request): Promise<Response> {
 }
 
 export async function resolveChatModelTag(modelId: string, signal: AbortSignal): Promise<string> {
-  if (isSupportedModel(modelId)) return resolveModelTag(modelId);
+  if (isSupportedModel(modelId)) {
+    const tag = resolveModelTag(modelId);
+    if (tag === embeddingModel())
+      throw new ModelServiceError("Choose a conversational model for chat.", 400);
+    return tag;
+  }
   const installed = (await getModelInventory(signal)).installed.find((m) => m.id === modelId);
   if (!installed)
     throw new ModelServiceError(

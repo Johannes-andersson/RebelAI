@@ -1,3 +1,5 @@
+import { DocumentRepository } from "./documents.server";
+import { cancelDocumentJob } from "./document-processing.server";
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -26,6 +28,7 @@ export function conversationDirectory() {
 
 export class ConversationRepository {
   private db: DatabaseSync;
+  readonly documents: DocumentRepository;
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path);
@@ -42,6 +45,7 @@ export class ConversationRepository {
       CREATE INDEX IF NOT EXISTS message_conversation ON messages(conversationId);
       CREATE UNIQUE INDEX IF NOT EXISTS one_generation_per_conversation ON messages(conversationId) WHERE status='pending';
       UPDATE messages SET status='interrupted' WHERE status='pending';`);
+    this.documents = new DocumentRepository(this.db, dirname(path));
   }
   close() {
     this.db.close();
@@ -70,7 +74,10 @@ export class ConversationRepository {
     const messages = this.db
       .prepare("SELECT * FROM messages WHERE conversationId=? ORDER BY rowid")
       .all(id) as unknown as StoredMessage[];
-    return { ...conversation, messages };
+    return {
+      ...conversation,
+      messages: messages.map((m) => ({ ...m, sources: this.documents.sources(m.id) })),
+    };
   }
   create(id: string, modelTag: string | null): Conversation {
     const now = new Date().toISOString();
@@ -88,6 +95,10 @@ export class ConversationRepository {
     return this.get(id);
   }
   delete(id: string) {
+    for (const file of this.documents.list(id)) {
+      cancelDocumentJob(file.id);
+      this.documents.delete(id, file.id);
+    }
     this.db.prepare("DELETE FROM conversations WHERE id=?").run(id);
   }
   beginTurn(id: string, messageId: string, content: string, modelTag: string): Conversation {
@@ -143,6 +154,11 @@ export class ConversationRepository {
 // opens it again and recovers unfinished replies. Run one server per data folder.
 const local = globalThis as typeof globalThis & { rebelConversations?: ConversationRepository };
 export function getConversations() {
+  // Upgrade a development server that already held the pre-attachments repository.
+  if (local.rebelConversations && !local.rebelConversations.documents) {
+    local.rebelConversations.close();
+    delete local.rebelConversations;
+  }
   return (local.rebelConversations ??= new ConversationRepository(
     join(conversationDirectory(), "conversations.sqlite"),
   ));

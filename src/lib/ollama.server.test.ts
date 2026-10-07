@@ -86,7 +86,7 @@ describe("Ollama server adapter", () => {
     { ...payload, modelId: "unknown" },
     { ...payload, messages: [] },
     { ...payload, messages: [{ role: "user", content: "" }] },
-    { ...payload, messages: [{ role: "system", content: "bad" }] },
+    { ...payload, messages: [{ role: "tool", content: "bad" }] },
   ])("rejects invalid requests before calling Ollama", async (body) => {
     vi.stubGlobal("fetch", vi.fn());
     expect((await handleOllamaChat(request(body))).status).toBe(400);

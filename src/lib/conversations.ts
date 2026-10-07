@@ -1,3 +1,4 @@
+import { sourceSchema } from "./document-config";
 import { z } from "zod";
 import type { Conversation, ConversationSummary } from "./types";
 const summarySchema = z.object({
@@ -16,6 +17,7 @@ const conversationSchema = summarySchema.extend({
       content: z.string(),
       createdAt: z.string(),
       status: z.enum(["pending", "complete", "interrupted", "error"]),
+      sources: sourceSchema.array().optional(),
     }),
   ),
 });

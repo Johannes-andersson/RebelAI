@@ -1,10 +1,23 @@
 // @vitest-environment node
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { processDocument } from "./document-processing.server";
+import { requireLocalModel } from "./embeddings.server";
 import { randomUUID } from "node:crypto";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { ConversationRepository } from "./conversations.server";
 import { handleConversationChat } from "./conversation-chat.server";
 import { handleOllamaChat } from "./ollama.server";
 vi.mock("./ollama.server", () => ({ handleOllamaChat: vi.fn() }));
+vi.mock("./embeddings.server", () => ({
+  localEmbedder: () => ({
+    model: "test:local",
+    embed: async (texts: string[]) => texts.map(() => [1, 0]),
+  }),
+  requireLocalModel: vi.fn(async () => {}),
+}));
+let directory: string;
 let db: ConversationRepository;
 let id: string;
 const encoder = new TextEncoder();
@@ -16,13 +29,15 @@ const request = (messageId = randomUUID(), content = "Hello", signal?: AbortSign
     body: JSON.stringify({ conversationId: id, messageId, modelId: "qwen-7b", content }),
   });
 beforeEach(() => {
-  db = new ConversationRepository(":memory:");
+  directory = mkdtempSync(join(tmpdir(), "rebel-rag-stream-"));
+  db = new ConversationRepository(join(directory, "db.sqlite"));
   id = randomUUID();
   db.create(id, null);
   vi.stubEnv("OLLAMA_MODEL_QWEN_7B", "");
 });
 afterEach(() => {
   db.close();
+  rmSync(directory, { recursive: true, force: true });
   vi.resetAllMocks();
   vi.unstubAllEnvs();
 });
@@ -128,4 +143,44 @@ describe("durable streamed conversations", () => {
     ]);
     expect(db.get(other).messages[1]?.content).toBe("Other answer");
   });
+});
+
+it("streams with scoped document context and durable source excerpts", async () => {
+  const file = db.documents.create(
+    id,
+    "launch.txt",
+    new TextEncoder().encode("Launch code: ORCHID"),
+  );
+  await processDocument(db.documents, id, file.id);
+  vi.mocked(handleOllamaChat).mockImplementation(async (request) => {
+    const body = await request.json();
+    expect(body.messages[0]).toMatchObject({
+      role: "system",
+      content: expect.stringContaining("Launch code: ORCHID"),
+    });
+    expect(body.messages[1]).toEqual({ role: "user", content: "What is the launch code?" });
+    expect(db.get(id).messages[1]!.sources).toMatchObject([{ filename: "launch.txt" }]);
+    return new Response('{"message":{"content":"ORCHID"},"done":true}\n');
+  });
+  const result = await handleConversationChat(
+    request(randomUUID(), "What is the launch code?"),
+    db,
+  );
+  expect(await result.text()).toContain('"done":true');
+  expect(requireLocalModel).toHaveBeenCalledWith("qwen2.5:7b", expect.any(AbortSignal));
+  expect(db.get(id).messages[1]).toMatchObject({
+    content: "ORCHID",
+    status: "complete",
+    sources: [{ fileId: file.id, text: "Launch code: ORCHID" }],
+  });
+});
+it("does not call embeddings or change normal chat context without attachments", async () => {
+  vi.mocked(handleOllamaChat).mockResolvedValue(
+    new Response('{"message":{"content":"Hi"},"done":true}\n'),
+  );
+  await (await handleConversationChat(request(), db)).text();
+  expect(requireLocalModel).not.toHaveBeenCalled();
+  expect((await vi.mocked(handleOllamaChat).mock.calls[0]![0].json()).messages).toEqual([
+    { role: "user", content: "Hello" },
+  ]);
 });

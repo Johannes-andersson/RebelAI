@@ -13,6 +13,7 @@ vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof import("@tanstack/react-router")>()),
   useNavigate: () => navigate,
 }));
+vi.mock("@/lib/documents", () => ({ documents: { list: vi.fn(async () => []) } }));
 vi.mock("@/lib/model-manager", () => ({ modelManager: { list: vi.fn() } }));
 vi.mock("@/lib/runtime", () => ({ chatRuntime: { streamReply: vi.fn() } }));
 vi.mock("@/lib/conversations", async (original) => ({
@@ -216,16 +217,14 @@ describe("persistent chat UI", () => {
 });
 
 it("opens saved history while Ollama is unavailable without calling the model missing", async () => {
-  records
-    .get("one")!
-    .messages.push({
-      id: "saved",
-      conversationId: "one",
-      role: "user",
-      content: "Saved offline history",
-      createdAt: "now",
-      status: "complete",
-    });
+  records.get("one")!.messages.push({
+    id: "saved",
+    conversationId: "one",
+    role: "user",
+    content: "Saved offline history",
+    createdAt: "now",
+    status: "complete",
+  });
   vi.mocked(modelManager.list).mockRejectedValueOnce(new Error("Ollama is not responding"));
   view();
   await ready();

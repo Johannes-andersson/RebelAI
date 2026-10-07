@@ -1,3 +1,5 @@
+import { useDocuments } from "@/hooks/use-documents";
+import { ConversationDocuments, MessageSources } from "@/components/conversation-documents";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
@@ -40,6 +42,8 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
   const model = installedModels.find((m) => m.id === activeModelId);
   const modelName = model?.name ?? "No model selected";
   const chat = useConversationChat(conversationId);
+  const documents = useDocuments(conversationId);
+  const fileInput = useRef<HTMLInputElement>(null);
   const { messages, streaming, error } = chat;
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -119,22 +123,25 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
               ) : (
                 <div key={m.id} className="flex gap-4 animate-in fade-in">
                   <span className="mt-1 h-6 w-6 shrink-0 rounded-md bg-primary-soft" />
-                  <p
-                    className={`whitespace-pre-wrap leading-relaxed text-foreground/90 ${streaming === m.id ? "caret" : ""}`}
-                  >
-                    {m.content || (
-                      <span className="text-subtle">
-                        {m.status === "pending" ? "Thinking…" : "No reply was completed."}
-                      </span>
-                    )}
-                    {m.status !== "complete" && m.id !== streaming && (
-                      <span className="mt-2 block text-xs text-subtle">
-                        {m.status === "pending"
-                          ? "Generation in progress…"
-                          : "Incomplete reply — excluded from future context."}
-                      </span>
-                    )}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={`whitespace-pre-wrap leading-relaxed text-foreground/90 ${streaming === m.id ? "caret" : ""}`}
+                    >
+                      {m.content || (
+                        <span className="text-subtle">
+                          {m.status === "pending" ? "Thinking…" : "No reply was completed."}
+                        </span>
+                      )}
+                      {m.status !== "complete" && m.id !== streaming && (
+                        <span className="mt-2 block text-xs text-subtle">
+                          {m.status === "pending"
+                            ? "Generation in progress…"
+                            : "Incomplete reply — excluded from future context."}
+                        </span>
+                      )}
+                    </p>
+                    <MessageSources sources={m.sources} />
+                  </div>
                 </div>
               ),
             )}
@@ -165,6 +172,19 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
             </button>
           </p>
         )}
+        <ConversationDocuments documents={documents} disabled={chat.pending} />
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".pdf,.txt,.md,.markdown"
+          aria-label="Choose local attachment"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) documents.upload(file);
+            event.target.value = "";
+          }}
+        />
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -189,6 +209,9 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
             <button
               type="button"
               aria-label="Attach file"
+              title="Attach PDF, TXT, or Markdown (up to 10 MB)"
+              disabled={!conversationId || chat.loading || chat.pending || documents.busy}
+              onClick={() => fileInput.current?.click()}
               className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <svg

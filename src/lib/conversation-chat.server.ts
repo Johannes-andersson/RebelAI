@@ -1,3 +1,5 @@
+import { retrieveDocuments, documentContext } from "./retrieval.server";
+import { requireLocalModel } from "./embeddings.server";
 import { z } from "zod";
 import {
   ConversationError,
@@ -61,6 +63,21 @@ export async function handleConversationChat(
     controller.signal.throwIfAborted();
     const conversation = db.beginTurn(conversationId, messageId, prompt, tag);
     assistantId = `${messageId}:assistant`;
+    const messages: { role: string; content: string }[] = conversation.messages
+      .filter((m) => m.status === "complete")
+      .map(({ role, content }) => ({ role, content }));
+    if (db.documents.list(conversationId).length) {
+      await requireLocalModel(tag, controller.signal);
+      const sources = await retrieveDocuments(
+        db.documents,
+        conversationId,
+        prompt,
+        controller.signal,
+      );
+      controller.signal.throwIfAborted();
+      db.documents.saveSources(assistantId, sources);
+      messages.unshift({ role: "system", content: documentContext(sources) });
+    }
     const upstream = await handleOllamaChat(
       new Request(request.url, {
         method: "POST",
@@ -68,9 +85,7 @@ export async function handleConversationChat(
         signal: controller.signal,
         body: JSON.stringify({
           modelId,
-          messages: conversation.messages
-            .filter((m) => m.status === "complete")
-            .map(({ role, content }) => ({ role, content })),
+          messages,
         }),
       }),
     );

@@ -1,3 +1,5 @@
+import { pullOllamaModel } from "./ollama-pull.server";
+import { embeddingModel } from "./embedding-config.server";
 import { z } from "zod";
 import {
   canonicalModelTag,
@@ -17,7 +19,11 @@ import type { ModelAvailability, ModelInventory } from "./model-manager";
 
 const tagsSchema = z.object({
   models: z.array(
-    z.object({ name: z.string().min(1), size: z.number().finite().nonnegative().optional() }),
+    z.object({
+      name: z.string().min(1),
+      size: z.number().finite().nonnegative().optional(),
+      capabilities: z.array(z.string()).optional(),
+    }),
   ),
 });
 
@@ -45,7 +51,15 @@ export async function getModelInventory(signal: AbortSignal): Promise<ModelInven
     modelId,
     tag: resolveModelTag(modelId),
   }));
-  const tags = new Map(data.data.models.map((m) => [canonicalModelTag(m.name), m]));
+  const tags = new Map(
+    data.data.models
+      .filter(
+        (m) =>
+          canonicalModelTag(m.name) !== embeddingModel() &&
+          !(m.capabilities?.includes("embedding") && !m.capabilities.includes("completion")),
+      )
+      .map((m) => [canonicalModelTag(m.name), m]),
+  );
   const installedIds = configured.filter((m) => tags.has(m.tag)).map((m) => m.modelId);
   return {
     installed: [...tags.entries()].map(([tag, m]) => {
@@ -114,69 +128,7 @@ export async function handleModelPull(request: Request): Promise<Response> {
     // Confirm connectivity before a potentially long pull. Pulling an existing tag is
     // safe: Ollama reuses its cached layers and reports their real progress.
     await getModelAvailability(modelId, request.signal);
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    request.signal.addEventListener("abort", abort, { once: true });
-    if (request.signal.aborted) controller.abort();
-    // Bound the wait for response headers, not the model download itself.
-    const headerTimeout = setTimeout(abort, 30000);
-    let upstream: Response;
-    try {
-      upstream = await fetch(ollamaUrl("pull"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: tag, stream: true }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      request.signal.removeEventListener("abort", abort);
-      if (request.signal.aborted) throw error;
-      throw new ModelServiceError(
-        "Ollama did not start the download. Check that it is running and retry.",
-        503,
-      );
-    } finally {
-      clearTimeout(headerTimeout);
-    }
-    if (!upstream.ok || !upstream.body) {
-      request.signal.removeEventListener("abort", abort);
-      const error = await upstream.json().catch(() => null);
-      throw new ModelServiceError(
-        typeof error?.error === "string"
-          ? error.error
-          : `Model download failed (${upstream.status}).`,
-        502,
-        "download_failed",
-      );
-    }
-
-    const reader = upstream.body.getReader();
-    const cleanup = () => request.signal.removeEventListener("abort", abort);
-    // Explicitly propagate downstream cancellation to Ollama, including when the
-    // HTTP server cancels the response body rather than aborting Request.signal.
-    const stream = new ReadableStream<Uint8Array>({
-      async pull(out) {
-        try {
-          const { value, done } = await reader.read();
-          if (done) {
-            cleanup();
-            reader.releaseLock();
-            out.close();
-          } else out.enqueue(value);
-        } catch (error) {
-          cleanup();
-          out.error(error);
-        }
-      },
-      async cancel() {
-        cleanup();
-        controller.abort();
-        await reader.cancel().catch(() => {});
-      },
-    });
-    return new Response(stream, {
-      headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" },
-    });
+    return await pullOllamaModel(tag, request.signal);
   } catch (error) {
     return modelErrorResponse(error);
   }

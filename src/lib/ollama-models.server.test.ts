@@ -263,3 +263,20 @@ describe("real model inventory and removal", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+it("hides the configurable internal component and embedding-only models from chat inventory", async () => {
+  vi.stubEnv("OLLAMA_EMBEDDING_MODEL", "internal-custom:latest");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      Response.json({
+        models: [
+          { name: "qwen2.5:7b", size: 123 },
+          { name: "internal-custom", size: 456 },
+          { name: "embeddinggemma:300m", capabilities: ["embedding"] },
+        ],
+      }),
+    ),
+  );
+  expect((await getModelInventory(signal())).installed.map((m) => m.tag)).toEqual(["qwen2.5:7b"]);
+});

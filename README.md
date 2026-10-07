@@ -212,7 +212,7 @@ development, or in the environment when starting the production server. Builds
 and restarts do not erase the database. Run **one app server per data directory**;
 use a separate temporary directory for tests. Database files and WAL sidecars are
 ignored by Git. Data remains on disk until the user deletes the conversations;
-there is no cloud database, account, sync, embedding, or semantic memory.
+there is no cloud database, account, sync, or semantic memory.
 
 `Sidebar/chat → conversation client → local API → ConversationRepository → SQLite`
 
@@ -256,3 +256,88 @@ the real connection, send a short message in `/chat` and confirm that its answer
 appears progressively. A follow-up question should include the current chat's
 context. If Ollama is stopped, sending should show instructions to start it and
 leave the composer usable.
+
+## Local attachments and retrieval
+
+In a chat, use the paperclip button to attach **PDF, UTF-8 TXT, or Markdown**.
+Files appear above the composer with Importing / Extracting / Preparing document search / Indexing / Ready /
+Error states. Failed jobs can be retried; Remove deletes the original file,
+indexed chunks, vectors, and saved source excerpts. Deleting a conversation also
+removes its attachments. Assistant answer text remains part of chat history.
+
+Rebel AI automatically prepares its internal document-search component when the
+first valid attachment needs indexing. Normal onboarding and chat without files
+do not install or check this component. The UI shows **Preparing document search…**
+and real progress for the current download layer. Once verified, indexing resumes
+on the original upload. If preparation fails, the file stays attached with a
+friendly Retry action; no Terminal command is required.
+
+The internal tag is centrally configured by server-only `OLLAMA_EMBEDDING_MODEL`
+(default `embeddinggemma:300m`). It is excluded from the conversational model
+inventory and selector, as are embedding-only entries reported by Ollama.
+Changing this setting requires reindexing existing attachments via Retry.
+
+Indexing and retrieval verify the exact component locally before use. If it was
+removed externally, the next embedding request reinstalls it automatically and
+continues. Concurrent callers share one download. Cancelling an individual file
+or question stops that caller's wait without cancelling other files' preparation.
+Preparation is bounded to 30 minutes; interrupted/failed downloads can be retried
+using Ollama's cached layers. Downloading requires internet access for model
+weights, but the pull request contains only the model tag, never document text.
+
+`ollama-pull.server.ts` is the shared pull transport and `model-pull-progress.ts`
+is the shared progress decoder used by onboarding, Models, and internal search.
+`GET /api/document-search` reports progress without initiating an installation;
+`POST` starts a user-requested retry. The attachment UI polls this lightweight
+status only in conversations with files, including while retrieval is preparing.
+
+Both embedding and attachment-assisted chat require a loopback `OLLAMA_BASE_URL`
+and reject Ollama cloud models. All file text and vectors stay on this computer.
+Do not expose this unauthenticated local application to a public network.
+
+The original bytes are stored as `REBEL_AI_DATA_DIR/attachments/<UUID>` (or under
+the default OS data directory), not inside SQLite. SQLite stores file metadata,
+processing states, chunk text, embedding model tags, vectors as JSON arrays, and
+per-message source excerpts. Existing conversation databases gain these tables
+without altering stored conversations or messages.
+
+The layers are intentionally small:
+
+- `document-storage.server.ts`: bounded uploads and original local files.
+- `documents.server.ts`: SQLite attachment/chunk/source records.
+- `document-extraction.server.ts`: UTF-8 and local Mozilla PDF.js extraction.
+- `document-chunks.ts`: deterministic overlapping text chunks with PDF pages.
+- `embeddings.server.ts`: local Ollama `/api/embed`, behind an embedding interface.
+- `document-processing.server.ts`: background extraction/indexing and retry.
+- `retrieval.server.ts`: conversation-scoped cosine similarity and context text.
+- `document-api.server.ts`: local upload/list/retry/remove endpoints.
+
+`POST /api/conversations/:id/documents` takes raw file bytes with an encoded
+`X-File-Name` header; GET lists attachments. POST to `.../documents/:documentId`
+retries indexing; DELETE removes the attachment. No original-file download route
+or global shared file library is added.
+
+Limits: 10 MB and 500,000 extracted characters per file, 500 PDF pages, 20 files
+per conversation, and two concurrent processing jobs. Chunks contain up to 1,200
+characters with roughly 180 characters of overlap. Indexing batches eight chunks
+per Ollama request. Retrieval scans only ready chunks in the current conversation,
+selects up to four above a 0.2 cosine score, and never sends whole documents.
+This straightforward in-process search suits small local collections; it is not
+a vector database or semantic conversation memory.
+
+The existing streamed chat path and normal history are preserved. For attachments,
+the server prepends a bounded system context that explicitly treats excerpts as
+untrusted evidence, then saves the selected sources before starting the reply.
+Completed answers display **Based on: filename**, expandable to exact excerpts
+and PDF pages. This records the supplied evidence, not proof every model claim is
+correct. Without relevant ready excerpts, the model is told it has no retrieved
+file evidence. Broken files remain separate errors and do not poison good indexes.
+
+Only text extraction is supported: scanned/image-only, corrupted, locked, and
+unsupported PDFs show clear errors. No OCR or image interpretation is performed.
+PDF.js is a server dependency; it reads local bytes, never a document URL.
+Interrupted indexing becomes a retryable error after a process restart. Ready
+files and indexes survive reloads/restarts. If a local original disappears, the
+attachment is marked as an error rather than silently using stale indexed text.
+The app still expects one server process per data directory and uses ordinary OS
+file permissions rather than encryption at rest.
