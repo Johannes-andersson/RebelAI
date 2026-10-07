@@ -75,7 +75,7 @@ export const models: ModelInfo[] = [
   },
 ];
 
-export const getModel = (id: string) => models.find((m) => m.id === id) ?? models[0];
+export const getModel = (id: string): ModelInfo => models.find((m) => m.id === id) ?? models[0]!;
 
 export const fitLabel: Record<ModelFit, string> = {
   recommended: "Recommended",
