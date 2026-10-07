@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { StatusDot } from "@/components/brand";
 import { getModel, models } from "@/lib/mock-data";
-import { mockRuntime } from "@/lib/runtime";
+import { chatRuntime } from "@/lib/runtime";
 import { appStore, useAppState } from "@/lib/store";
 import type { ChatMessage } from "@/lib/types";
 
@@ -27,7 +27,12 @@ function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
+  const failedReplies = useRef(new Set<string>());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => () => requestRef.current?.abort(), []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -35,19 +40,50 @@ function ChatPage() {
 
   async function send(text: string) {
     const content = text.trim();
-    if (!content || streaming) return;
+    if (!content || requestRef.current) return;
+    const controller = new AbortController();
+    requestRef.current = controller;
     const aiId = crypto.randomUUID();
-    setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", content }, { id: aiId, role: "assistant", content: "" }]);
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content };
+    const history = [...messages, userMessage].filter((m) => m.content && !failedReplies.current.has(m.id));
+    setMessages((m) => [...m, userMessage, { id: aiId, role: "assistant", content: "" }]);
     setInput("");
+    setError(null);
     setStreaming(aiId);
-    await mockRuntime.streamReply(content, (chunk) =>
-      setMessages((m) => m.map((msg) => (msg.id === aiId ? { ...msg, content: msg.content + chunk } : msg))),
-    );
+    try {
+      await chatRuntime.streamReply(
+        { modelId: activeModelId, messages: history.map(({ role, content }) => ({ role, content })) },
+        (chunk) => {
+          if (requestRef.current !== controller || controller.signal.aborted) return;
+          setMessages((m) => m.map((msg) => (msg.id === aiId ? { ...msg, content: msg.content + chunk } : msg)));
+        },
+        controller.signal,
+      );
+    } catch (cause) {
+      if (requestRef.current === controller && !controller.signal.aborted) {
+        failedReplies.current.add(aiId);
+        setMessages((m) => m.filter((msg) => msg.id !== aiId || msg.content));
+        setError(cause instanceof Error ? cause.message : "The reply failed. Please try again.");
+      }
+    } finally {
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        setStreaming(null);
+      }
+    }
+  }
+
+  function newChat() {
+    requestRef.current?.abort();
+    requestRef.current = null;
+    failedReplies.current.clear();
+    setMessages([]);
     setStreaming(null);
+    setError(null);
   }
 
   return (
-    <AppShell onNewChat={() => setMessages([])}>
+    <AppShell onNewChat={newChat}>
       <header className="flex items-center justify-between border-b border-border px-8 py-4">
         <div>
           <h1 className="font-medium">Rebel AI</h1>
@@ -55,6 +91,7 @@ function ChatPage() {
         </div>
         <select
           value={activeModelId}
+          disabled={!!streaming}
           onChange={(e) => appStore.set({ activeModelId: e.target.value, running: e.target.value })}
           className="h-9 rounded-md border border-input bg-panel px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
@@ -84,7 +121,7 @@ function ChatPage() {
               ) : (
                 <div key={m.id} className="flex gap-4 animate-in fade-in">
                   <span className="mt-1 h-6 w-6 shrink-0 rounded-md bg-primary-soft" />
-                  <p className={`leading-relaxed text-foreground/90 ${streaming === m.id ? "caret" : ""}`}>
+                  <p className={`whitespace-pre-wrap leading-relaxed text-foreground/90 ${streaming === m.id ? "caret" : ""}`}>
                     {m.content || <span className="text-subtle">Thinking…</span>}
                   </p>
                 </div>
@@ -95,6 +132,7 @@ function ChatPage() {
       </div>
 
       <div className="mx-auto w-full max-w-3xl px-8 pb-6">
+        {error && <p role="alert" className="mb-3 text-sm text-destructive">{error}</p>}
         <form
           onSubmit={(e) => {
             e.preventDefault();

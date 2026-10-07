@@ -1,27 +1,90 @@
-// Runtime adapter boundary. Today: mocked. Later: Ollama, llama.cpp,
-// OpenAI-compatible providers via the local FastAPI backend.
+import type { ChatMessage } from "./types";
 
-export interface ChatRuntime {
-  streamReply(prompt: string, onToken: (chunk: string) => void, signal?: AbortSignal): Promise<void>;
+export interface ChatRequest {
+  modelId: string;
+  messages: Pick<ChatMessage, "role" | "content">[];
 }
 
-const canned: Array<[RegExp, string]> = [
-  [/rebel/i, "Rebel AI is a local-first AI workspace designed to let you run powerful AI models directly on your computer without complicated setup. Your conversations, files, and models stay on your machine — no accounts, no cloud, no terminal."],
-  [/code|python|function/i, "Happy to help. Tell me what you're trying to build, which language you prefer, and any constraints. I'll sketch a small working version first, then we can refine it together."],
-  [/explain|what is/i, "Sure. I'll start with a plain-language overview, then go one level deeper with an example. Stop me any time you want more detail or a simpler version."],
-];
+// The UI depends only on this interface. Another provider can implement it later.
+export interface ChatRuntime {
+  streamReply(
+    request: ChatRequest,
+    onToken: (chunk: string) => void,
+    signal?: AbortSignal,
+  ): Promise<void>;
+}
 
-export const mockRuntime: ChatRuntime = {
-  async streamReply(prompt, onToken, signal) {
-    const reply =
-      canned.find(([re]) => re.test(prompt))?.[1] ??
-      "Got it. I'm running entirely on your computer, so take your time — share as much context as you like and I'll work through it with you step by step.";
-    const words = reply.split(/(\s+)/);
-    await new Promise((r) => setTimeout(r, 450));
-    for (const w of words) {
-      if (signal?.aborted) return;
-      onToken(w);
-      await new Promise((r) => setTimeout(r, 18 + Math.random() * 40));
+// Ollama's wire format stays inside this adapter, never in the chat component.
+export const chatRuntime: ChatRuntime = {
+  async streamReply(request, onToken, signal) {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+      signal: signal ?? null,
+    }).catch((error: unknown) => {
+      if (signal?.aborted) throw error;
+      throw new Error("Cannot reach Rebel AI's local server. Check that the app is running.");
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(
+        typeof body?.error === "string" ? body.error : `Chat request failed (${response.status}).`,
+      );
+    }
+    if (!response.body) throw new Error("The chat server returned an empty response.");
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    let finished = false;
+    let hasText = false;
+
+    function consume(line: string) {
+      if (!line.trim()) return;
+      let event;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        throw new Error("Ollama returned an invalid streaming response. Please try again.");
+      }
+      if (!event || typeof event !== "object") {
+        throw new Error("Ollama returned an invalid streaming response. Please try again.");
+      }
+      if (typeof event.error === "string") throw new Error(`Ollama: ${event.error}`);
+      if (typeof event.message?.content === "string" && event.message.content) {
+        hasText = true;
+        onToken(event.message.content);
+      }
+      if (event.done === true) finished = true;
+    }
+
+    try {
+      while (!finished) {
+        signal?.throwIfAborted();
+        const { value, done } = await reader.read().catch((error: unknown) => {
+          if (signal?.aborted) throw error;
+          throw new Error("Ollama's response was interrupted. Please try again.");
+        });
+        signal?.throwIfAborted();
+        pending += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        for (const line of lines) {
+          consume(line);
+          if (finished) break;
+        }
+        if (done) {
+          if (!finished) consume(pending);
+          break;
+        }
+      }
+      if (!finished) throw new Error("Ollama's response was interrupted. Please try again.");
+      if (!hasText) throw new Error("Ollama returned no reply. Please try again.");
+    } finally {
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
   },
 };

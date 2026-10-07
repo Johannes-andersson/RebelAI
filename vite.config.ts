@@ -5,11 +5,21 @@
 //     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { loadEnv, type ConfigEnv } from "vite";
 
-export default defineConfig({
+const config = defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
   },
 });
+
+export default (env: ConfigEnv) => {
+  // Read only server-side Ollama settings; don't expose them as VITE_* variables.
+  const ollamaEnv = loadEnv(env.mode, process.cwd(), "OLLAMA_");
+  for (const [key, value] of Object.entries(ollamaEnv)) {
+    process.env[key] ??= value;
+  }
+  return config(env);
+};
