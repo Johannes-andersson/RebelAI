@@ -1,16 +1,6 @@
-import type { Conversation, ModelFit, ModelInfo, SystemInfo } from "./types";
+import type { Conversation, ModelFit, ModelInfo } from "./types";
 
-// Mocked data. Replace with real hardware detection / model catalog later.
-
-export const mockSystem: SystemInfo = {
-  chip: "Apple M2",
-  memoryGB: 16,
-  platform: "Apple Silicon",
-  os: "macOS",
-  architecture: "ARM64",
-  acceleration: "Apple Metal",
-  recommendedMaxSize: "Medium",
-};
+// Prototype catalog and conversations. Hardware comes from /api/system.
 
 export const models: ModelInfo[] = [
   {
@@ -57,7 +47,7 @@ export const models: ModelInfo[] = [
     speed: "Slow",
     fit: "slow",
     tags: ["coding", "reasoning"],
-    description: "Smarter on hard problems, but uses most of your memory.",
+    description: "Smarter on hard problems, with higher memory requirements.",
     capabilities: { chat: "Excellent", writing: "Excellent", coding: "Excellent", reasoning: "Excellent" },
     advanced: { parameters: "14B", quantization: "Q4", context: "16K" },
   },
@@ -69,7 +59,7 @@ export const models: ModelInfo[] = [
     speed: "Slow",
     fit: "not-recommended",
     tags: ["reasoning"],
-    description: "Very capable, but needs far more memory than this Mac has.",
+    description: "Very capable, but requires at least 48 GB of memory for the model.",
     capabilities: { chat: "Excellent", writing: "Excellent", coding: "Excellent", reasoning: "Excellent" },
     advanced: { parameters: "70B", quantization: "Q4", context: "8K" },
   },

@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Wordmark, StatusDot } from "@/components/brand";
 import { FitBadge } from "@/components/models/fit-badge";
 import { Disclosure, KeyValue } from "@/components/ui-bits";
-import { mockSystem, models } from "@/lib/mock-data";
-import type { ModelInfo, ModelTag } from "@/lib/types";
+import type { ModelInfo, ModelTag, SystemInfo } from "@/lib/types";
 
 export function Welcome({ onStart, onManual }: { onStart: () => void; onManual: () => void }) {
   return (
@@ -43,13 +42,14 @@ function Shell({ step, children, onBack }: { step: number; children: React.React
   );
 }
 
-export function Detect({ onContinue, onBack }: { onContinue: () => void; onBack: () => void }) {
-  const [checking, setChecking] = useState(true);
-  useEffect(() => {
-    const t = setTimeout(() => setChecking(false), 1300);
-    return () => clearTimeout(t);
-  }, []);
-  const s = mockSystem;
+export function Detect({ system: s, checking, error, onRetry, onContinue, onBack }: {
+  system: SystemInfo | undefined;
+  checking: boolean;
+  error: string | null;
+  onRetry: () => void;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
   return (
     <Shell step={1} onBack={onBack}>
       <h1 className="text-4xl font-semibold tracking-tight">Let's set up your local AI.</h1>
@@ -60,29 +60,32 @@ export function Detect({ onContinue, onBack }: { onContinue: () => void; onBack:
           <h2 className="eyebrow">Your computer</h2>
           {checking ? (
             <span className="flex items-center gap-2 text-sm text-muted-foreground"><StatusDot tone="primary" /> Checking…</span>
+          ) : s && !error ? (
+            <span className="animate-in fade-in rounded-full bg-success-soft px-3 py-1 text-sm font-medium text-success">✓ Detected</span>
           ) : (
-            <span className="animate-in fade-in rounded-full bg-success-soft px-3 py-1 text-sm font-medium text-success">✓ Compatible</span>
+            <span className="text-sm text-destructive">Detection unavailable</span>
           )}
         </div>
         <div className={`mt-5 grid grid-cols-2 gap-x-8 gap-y-3 transition-opacity duration-500 ${checking ? "opacity-30" : ""}`}>
-          <p className="text-2xl font-medium">{s.chip}</p>
-          <p className="text-2xl font-medium">{s.memoryGB} GB memory</p>
-          <p className="text-muted-foreground">{s.platform}</p>
-          <p className="text-muted-foreground">{s.os}</p>
+          <p className="text-2xl font-medium">{s?.chip ?? "—"}</p>
+          <p className="text-2xl font-medium">{s ? `${s.memoryGB} GB memory` : "—"}</p>
+          <p className="text-muted-foreground">{s?.platform ?? "—"}</p>
+          <p className="text-muted-foreground">{s?.os ?? "—"}</p>
         </div>
       </section>
-      <p className="mt-4 text-sm text-subtle">Rebel AI uses your hardware to determine which local models should perform best.</p>
+      <p className="mt-4 text-sm text-subtle">{s ? `Recommended model tier: ${s.recommendation.tier}. ${s.recommendation.reason}` : "Rebel AI checks the computer running this local app."}</p>
+      {error && <div role="alert" className="mt-4 text-sm text-destructive">{error} <button className="btn-secondary mt-2" disabled={checking} onClick={onRetry}>Try again</button></div>}
 
       <div className="mt-10 flex items-center justify-between">
         <Disclosure label="Advanced system information">
           <div className="panel w-80 divide-y divide-border px-4 py-1">
-            <KeyValue k="CPU" v={s.chip} />
-            <KeyValue k="Memory" v={`${s.memoryGB} GB`} />
-            <KeyValue k="Architecture" v={s.architecture} />
-            <KeyValue k="Acceleration" v={s.acceleration} />
+            <KeyValue k="CPU" v={s?.chip ?? "—"} />
+            <KeyValue k="Memory" v={s ? `${s.memoryGB} GB` : "—"} />
+            <KeyValue k="Architecture" v={s?.architecture ?? "—"} />
+            <KeyValue k="Acceleration" v={s?.acceleration ?? "Not checked"} />
           </div>
         </Disclosure>
-        <button onClick={onContinue} disabled={checking} className="btn-primary self-start">Continue</button>
+        <button onClick={onContinue} disabled={checking || !!error || !s?.recommendation.modelId} className="btn-primary self-start">Continue</button>
       </div>
     </Shell>
   );
@@ -92,11 +95,13 @@ const ratingWidth = { Excellent: "w-full", Good: "w-2/3", Fair: "w-1/3" } as con
 
 export function Recommend({
   model,
+  system,
   onInstall,
   onBrowse,
   onBack,
 }: {
   model: ModelInfo;
+  system: SystemInfo;
   onInstall: () => void;
   onBrowse: () => void;
   onBack: () => void;
@@ -111,7 +116,7 @@ export function Recommend({
   const speedW = { Fast: "w-full", Moderate: "w-2/3", Slow: "w-1/3" } as const;
   return (
     <Shell step={2} onBack={onBack}>
-      <p className="eyebrow">Recommended for your Mac</p>
+      <p className="eyebrow">Recommended for your computer</p>
       <section className="panel mt-4 overflow-hidden">
         <div className="p-8">
           <div className="flex items-start justify-between">
@@ -136,9 +141,10 @@ export function Recommend({
           </div>
         </div>
         <div className="border-t border-border bg-panel-raised px-8 py-4 text-sm text-muted-foreground">
-          Recommended for {mockSystem.chip} with {mockSystem.memoryGB} GB memory
+          {system.chip} • {system.memoryGB} GB memory • {system.recommendation.tier} tier
         </div>
       </section>
+      <p className="mt-4 text-sm text-subtle">{system.recommendation.reason} Model ratings are catalog estimates.</p>
 
       <div className="mt-8 flex items-center gap-6">
         <button onClick={onInstall} className="btn-primary h-12 px-8">Install Model</button>
@@ -185,7 +191,7 @@ const filters: Array<{ id: "recommended" | ModelTag | "all"; label: string }> = 
   { id: "all", label: "All Models" },
 ];
 
-export function ModelBrowser({ onPick, onBack }: { onPick: (m: ModelInfo) => void; onBack: () => void }) {
+export function ModelBrowser({ models, onPick, onBack }: { models: ModelInfo[]; onPick: (m: ModelInfo) => void; onBack: () => void }) {
   const [filter, setFilter] = useState<(typeof filters)[number]["id"]>("all");
   const list = models.filter((m) =>
     filter === "all" ? true : filter === "recommended" ? m.fit === "recommended" || m.fit === "good" : m.tags.includes(filter),
@@ -194,7 +200,7 @@ export function ModelBrowser({ onPick, onBack }: { onPick: (m: ModelInfo) => voi
     <Shell step={2} onBack={onBack}>
       <div className="-mx-40">
         <h1 className="text-4xl font-semibold tracking-tight">Choose a model</h1>
-        <p className="mt-3 text-muted-foreground">Every model runs privately on your computer. We've marked what fits your Mac.</p>
+        <p className="mt-3 text-muted-foreground">Every model runs privately on your computer. We've estimated what fits your memory budget.</p>
         <div className="mt-8 flex gap-2">
           {filters.map((f) => (
             <button

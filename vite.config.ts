@@ -8,6 +8,8 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 import { loadEnv, type ConfigEnv } from "vite";
 
 const config = defineConfig({
+  // Hardware detection needs the actual local OS, not an edge worker's OS shims.
+  nitro: { preset: "node-server" },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this

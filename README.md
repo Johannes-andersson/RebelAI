@@ -48,8 +48,8 @@ the corresponding environment variable in `.env.local` or the server's shell:
 | Qwen 14B     | `qwen2.5:14b`      | `OLLAMA_MODEL_QWEN_14B`  |
 | Llama 70B    | `llama3.1:70b`     | `OLLAMA_MODEL_LLAMA_70B` |
 
-Use matching tags to keep the UI labels accurate. Model installation, hardware
-detection, settings, and sidebar history are still prototype features. Installing
+Use matching tags to keep the UI labels accurate. Model installation,
+settings, and sidebar history are still prototype features. Installing
 a model in the UI does not download it into Ollama. The Advanced settings API
 address is also still a placeholder; configure the actual address with the
 environment variable above.
@@ -72,6 +72,51 @@ next request's conversation context.
 This milestone is for local development. A cloud-hosted Lovable server cannot
 reach the Ollama service on your computer through its own loopback address.
 For a separately launched server, provide `OLLAMA_*` settings in its environment.
+
+## Hardware detection and onboarding
+
+Open `/` and choose **Set up Rebel AI**. The existing setup screens now request
+`GET /api/system` from the local app server. They display the actual OS, CPU/chip,
+hardware architecture, and total physical memory. The Models page uses the same
+result. Failed detection shows an error and retry control, never fabricated hardware.
+
+The server uses Node's built-in `node:os` APIs. On macOS it also runs the fixed,
+read-only command `/usr/sbin/sysctl -n hw.optional.arm64` to recognize Apple Silicon
+under Rosetta. This uses `execFile` without a shell, with a 1.5-second timeout and
+1 KB output limit. No administrator privileges, serial numbers, hostnames, user
+files, or external services are involved. An unavailable optional query falls
+back to the OS architecture and CPU model; unavailable memory produces an error.
+
+Recommendations are deliberately simple estimates based on **total RAM**, not
+available RAM, benchmark results, or GPU memory:
+
+| Total memory  | Tier   | Preferred existing catalog model    |
+| ------------- | ------ | ----------------------------------- |
+| Below 16 GB   | Small  | Qwen 7B, only if it fits the budget |
+| 16–31 GB      | Medium | Qwen 7B                             |
+| 32 GB or more | Large  | Qwen 14B                            |
+
+The budget reserves the greater of 4 GB or 25% of RAM for the OS and other apps.
+Catalog memory requirements determine fit badges. For example, an 8 GB machine
+has no suitable model in the current catalog, while a 16 GB machine has a 12 GB
+model budget. Qwen 14B becomes the default at 32 GB; Llama 70B is never selected
+automatically. Thresholds use raw bytes; display values use GiB (2^30 bytes),
+labeled GB in the existing UI. Speed and capability ratings remain catalog
+estimates, and GPU acceleration is explicitly **Not checked**.
+
+Detection describes the **server's computer**, so run the server on the machine
+that will run the models. It is not remote browser hardware detection. Local
+production builds now use Nitro's Node server preset, retaining access to OS APIs:
+
+```sh
+npm run build
+HOST=127.0.0.1 PORT=3000 node .output/server/index.mjs
+```
+
+For this standalone server, pass any `OLLAMA_*` configuration in its environment.
+Cloud/edge deployments are not supported for local hardware detection. The
+recommendation does not check installed models or download anything. The later
+installation screens are still the original simulated prototype.
 
 ### Checks
 

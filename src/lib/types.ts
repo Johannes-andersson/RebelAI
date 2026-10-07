@@ -19,12 +19,21 @@ export interface ModelInfo {
 
 export interface SystemInfo {
   chip: string;
+  memoryBytes: number;
   memoryGB: number;
   platform: string;
   os: string;
   architecture: string;
   acceleration: string;
-  recommendedMaxSize: "Small" | "Medium" | "Large";
+  recommendation: HardwareRecommendation;
+}
+
+export interface HardwareRecommendation {
+  tier: "Small" | "Medium" | "Large";
+  modelId: string | null;
+  budgetGB: number;
+  fits: Record<string, ModelFit>;
+  reason: string;
 }
 
 export interface ChatMessage {

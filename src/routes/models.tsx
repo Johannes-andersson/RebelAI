@@ -3,7 +3,8 @@ import { useState } from "react";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { StatusDot } from "@/components/brand";
 import { FitBadge } from "@/components/models/fit-badge";
-import { mockSystem, models } from "@/lib/mock-data";
+import { models } from "@/lib/mock-data";
+import { useSystemInfo } from "@/hooks/use-system-info";
 import { appStore, useAppState } from "@/lib/store";
 
 export const Route = createFileRoute("/models")({
@@ -20,6 +21,8 @@ export const Route = createFileRoute("/models")({
 
 function ModelsPage() {
   const { installed, running } = useAppState();
+  const hardware = useSystemInfo();
+  const system = hardware.data;
   const [progress, setProgress] = useState<Record<string, number>>({});
 
   function install(id: string) {
@@ -46,7 +49,7 @@ function ModelsPage() {
   }
 
   const mine = models.filter((m) => installed.includes(m.id));
-  const available = models.filter((m) => !installed.includes(m.id) && m.fit !== "not-recommended");
+  const available = models.map((m) => ({ ...m, fit: system?.recommendation.fits[m.id] ?? "not-recommended" as const })).filter((m) => !installed.includes(m.id) && m.fit !== "not-recommended");
 
   return (
     <AppShell>
@@ -56,8 +59,13 @@ function ModelsPage() {
           subtitle="Everything here runs on your computer."
           right={
             <div className="panel px-5 py-3 text-right">
-              <p className="text-sm font-medium">{mockSystem.chip} • {mockSystem.memoryGB} GB RAM</p>
-              <p className="text-xs text-muted-foreground">Recommended maximum model size: <span className="text-primary">{mockSystem.recommendedMaxSize}</span></p>
+              {system ? <>
+                <p className="text-sm font-medium">{system.chip} • {system.memoryGB} GB RAM</p>
+                <p className="text-xs text-muted-foreground">Recommended model tier: <span className="text-primary">{system.recommendation.tier}</span></p>
+              </> : hardware.error ? <>
+                <p role="alert" className="text-sm text-destructive">{hardware.error.message}</p>
+                <button className="link-quiet" onClick={() => { void hardware.refetch(); }}>Try again</button>
+              </> : <p className="text-sm text-muted-foreground">Checking hardware…</p>}
             </div>
           }
         />

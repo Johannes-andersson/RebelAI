@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useState } from "react";
 import { Complete, Detect, Install, ModelBrowser, Recommend, Welcome } from "@/components/onboarding/screens";
-import { getModel } from "@/lib/mock-data";
+import { models } from "@/lib/mock-data";
+import { useSystemInfo } from "@/hooks/use-system-info";
 import { appStore } from "@/lib/store";
 
 export const Route = createFileRoute("/")({
@@ -20,11 +21,16 @@ type Step = "welcome" | "detect" | "recommend" | "browse" | "install" | "complet
 
 function Onboarding() {
   const [step, setStep] = useState<Step>("welcome");
-  const [modelId, setModelId] = useState("qwen-7b");
+  const [selectedModelId, setModelId] = useState<string | null>(null);
+  const hardware = useSystemInfo(step !== "welcome");
+  const system = hardware.data;
+  const modelId = selectedModelId ?? system?.recommendation.modelId;
+  const catalog = models.map((m) => ({ ...m, fit: system?.recommendation.fits[m.id] ?? "not-recommended" as const }));
   const navigate = useNavigate();
-  const model = getModel(modelId);
+  const model = catalog.find((m) => m.id === modelId);
 
   const finish = useCallback(() => {
+    if (!modelId) return;
     const s = appStore.get();
     appStore.set({
       installed: Array.from(new Set([...s.installed, modelId])),
@@ -37,12 +43,13 @@ function Onboarding() {
   return (
     <div key={step}>
       {step === "welcome" && <Welcome onStart={() => setStep("detect")} onManual={() => navigate({ to: "/settings" })} />}
-      {step === "detect" && <Detect onBack={() => setStep("welcome")} onContinue={() => setStep("recommend")} />}
-      {step === "recommend" && (
-        <Recommend model={model} onBack={() => setStep("detect")} onInstall={() => setStep("install")} onBrowse={() => setStep("browse")} />
+      {step === "detect" && <Detect system={system} checking={hardware.isPending || hardware.isFetching} error={hardware.error?.message ?? null} onRetry={() => { void hardware.refetch(); }} onBack={() => setStep("welcome")} onContinue={() => setStep("recommend")} />}
+      {step === "recommend" && model && system && (
+        <Recommend model={model} system={system} onBack={() => setStep("detect")} onInstall={() => setStep("install")} onBrowse={() => setStep("browse")} />
       )}
       {step === "browse" && (
         <ModelBrowser
+          models={catalog}
           onBack={() => setStep("recommend")}
           onPick={(m) => {
             setModelId(m.id);
@@ -50,8 +57,8 @@ function Onboarding() {
           }}
         />
       )}
-      {step === "install" && <Install model={model} onDone={finish} onCancel={() => setStep("recommend")} />}
-      {step === "complete" && (
+      {step === "install" && model && <Install model={model} onDone={finish} onCancel={() => setStep("recommend")} />}
+      {step === "complete" && model && (
         <Complete model={model} onChat={() => navigate({ to: "/chat" })} onSettings={() => navigate({ to: "/models" })} />
       )}
     </div>
