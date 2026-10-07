@@ -1,4 +1,8 @@
-import { retrieveDocuments, documentContext } from "./retrieval.server";
+import { explicitMemoryContent } from "./memory-config";
+import { captureMemory, recallMemories } from "./memory-service.server";
+import { buildChatContext } from "./chat-context.server";
+import type { DocumentSource } from "./document-config";
+import { retrieveDocuments } from "./retrieval.server";
 import { requireLocalModel } from "./embeddings.server";
 import { z } from "zod";
 import {
@@ -63,9 +67,22 @@ export async function handleConversationChat(
     controller.signal.throwIfAborted();
     const conversation = db.beginTurn(conversationId, messageId, prompt, tag);
     assistantId = `${messageId}:assistant`;
-    const messages: { role: string; content: string }[] = conversation.messages
-      .filter((m) => m.status === "complete")
-      .map(({ role, content }) => ({ role, content }));
+    const memoryCommand = explicitMemoryContent(prompt);
+    if (memoryCommand !== null) {
+      content = await captureMemory(
+        () => db!.memories,
+        memoryCommand,
+        conversationId,
+        controller.signal,
+      );
+      controller.signal.throwIfAborted();
+      save("complete");
+      request.signal.removeEventListener("abort", abort);
+      return new Response(JSON.stringify({ message: { content }, done: true }) + "\n", {
+        headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" },
+      });
+    }
+    let documents: DocumentSource[] | null = null;
     if (db.documents.list(conversationId).length) {
       await requireLocalModel(tag, controller.signal);
       const sources = await retrieveDocuments(
@@ -76,8 +93,17 @@ export async function handleConversationChat(
       );
       controller.signal.throwIfAborted();
       db.documents.saveSources(assistantId, sources);
-      messages.unshift({ role: "system", content: documentContext(sources) });
+      documents = sources;
     }
+    const recalled = await recallMemories(() => db!.memories, prompt, tag, controller.signal);
+    let memories = recalled?.memories ?? [];
+    try {
+      if (!recalled || !db.memories.unchanged(recalled.revision)) memories = [];
+      if (memories.length) db.memories.markUsed(assistantId);
+    } catch {
+      memories = [];
+    }
+    const messages = buildChatContext(conversation, documents, memories);
     const upstream = await handleOllamaChat(
       new Request(request.url, {
         method: "POST",

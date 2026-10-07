@@ -43,6 +43,7 @@ export interface ChatMessage {
 }
 
 export interface StoredMessage extends ChatMessage {
+  memoryUsed?: boolean | undefined;
   sources?: import("./document-config").DocumentSource[] | undefined;
   conversationId: string;
   createdAt: string;

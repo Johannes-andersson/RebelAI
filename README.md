@@ -212,7 +212,7 @@ development, or in the environment when starting the production server. Builds
 and restarts do not erase the database. Run **one app server per data directory**;
 use a separate temporary directory for tests. Database files and WAL sidecars are
 ignored by Git. Data remains on disk until the user deletes the conversations;
-there is no cloud database, account, sync, or semantic memory.
+there is no cloud database, account, or sync. Explicit saved memories use the same database (see below).
 
 `Sidebar/chat → conversation client → local API → ConversationRepository → SQLite`
 
@@ -323,7 +323,7 @@ characters with roughly 180 characters of overlap. Indexing batches eight chunks
 per Ollama request. Retrieval scans only ready chunks in the current conversation,
 selects up to four above a 0.2 cosine score, and never sends whole documents.
 This straightforward in-process search suits small local collections; it is not
-a vector database or semantic conversation memory.
+a separate vector database or automatic conversation-memory extraction.
 
 The existing streamed chat path and normal history are preserved. For attachments,
 the server prepends a bounded system context that explicitly treats excerpts as
@@ -341,3 +341,45 @@ files and indexes survive reloads/restarts. If a local original disappears, the
 attachment is marked as an error rather than silently using stale indexed text.
 The app still expects one server process per data directory and uses ordinary OS
 file permissions rather than encryption at rest.
+
+## Explicit local memory
+
+Tell Rebel AI “Remember that…”, “Remember this…”, “Save this to memory…” or
+“Keep this in memory…” followed by the information to save. Only these direct
+instructions save memory; normal messages are never automatically extracted.
+A successful acknowledgement means the text has been saved locally.
+
+Settings → Memory lists saved information, lets you delete individual entries,
+and requires confirmation to clear everything. Memory starts enabled. Turning it
+off stops capture and recall without removing existing entries; turning it back
+on restores their availability. Deleting memories does not delete conversations,
+attachments, or text already present in an earlier conversation.
+
+`MemoryRepository` shares the existing `ConversationRepository` SQLite connection
+and `conversations.sqlite` file. Additive table creation introduces `memories`,
+`memory_settings`, and a small `message_memory_usage` table; existing data needs
+no conversion. Deleting a source conversation clears its optional reference but
+retains the explicitly saved memory. The same per-OS data directory and
+`REBEL_AI_DATA_DIR` override apply.
+
+Memory text is committed before attempting embeddings. The shared local
+embedding provider automatically prepares its internal model if needed. If
+embedding preparation fails, the saved text remains and a later recall retries
+missing embeddings (up to eight per request). No separate embedding dependency,
+remote service, or database is introduced.
+
+Recall uses cosine similarity with a 0.50 question threshold and a separate
+0.55 writing-preference threshold so preferences such as short answers can apply
+across topics. At most three matching memories are included. These configurable
+limits live in `src/lib/memory-config.ts`, alongside a 1,000-character per-memory
+limit and 500-memory cap. These are simple heuristic thresholds, not a guarantee
+that every useful memory will match. Recall has a 30-second budget; errors or
+slow initialization skip memory for that reply so ordinary chat can continue.
+Memory embeddings and recalled context only use a verified local runtime.
+
+The context builder keeps saved memory, attached-document excerpts, and current
+conversation history distinct. “Memory used” means saved context was supplied
+for that answer, not proof of how the model used it. This historical indicator
+remains on old replies after memory is disabled or cleared. No summarization,
+automatic extraction, profiling, categories, cloud sync, or autonomous editing
+is implemented.

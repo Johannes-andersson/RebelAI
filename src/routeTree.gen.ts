@@ -17,9 +17,11 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ApiChatRouteImport } from './routes/api.chat'
 import { Route as ApiConversationsRouteImport } from './routes/api.conversations'
 import { Route as ApiDocumentSearchRouteImport } from './routes/api.document-search'
+import { Route as ApiMemoriesRouteImport } from './routes/api.memories'
 import { Route as ApiModelsRouteImport } from './routes/api.models'
 import { Route as ApiSystemRouteImport } from './routes/api.system'
 import { Route as ApiConversationsIdRouteImport } from './routes/api.conversations.$id'
+import { Route as ApiMemoriesIdRouteImport } from './routes/api.memories.$id'
 import { Route as ApiModelsPullRouteImport } from './routes/api.models.pull'
 import { Route as ApiConversationsIdDocumentsRouteImport } from './routes/api.conversations.$id.documents'
 import { Route as ApiConversationsIdDocumentsDocumentIdRouteImport } from './routes/api.conversations.$id.documents.$documentId'
@@ -64,6 +66,11 @@ const ApiDocumentSearchRoute = ApiDocumentSearchRouteImport.update({
   path: '/api/document-search',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMemoriesRoute = ApiMemoriesRouteImport.update({
+  id: '/api/memories',
+  path: '/api/memories',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiModelsRoute = ApiModelsRouteImport.update({
   id: '/api/models',
   path: '/api/models',
@@ -78,6 +85,11 @@ const ApiConversationsIdRoute = ApiConversationsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => ApiConversationsRoute,
+} as any)
+const ApiMemoriesIdRoute = ApiMemoriesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiMemoriesRoute,
 } as any)
 const ApiModelsPullRoute = ApiModelsPullRouteImport.update({
   id: '/pull',
@@ -106,9 +118,11 @@ export interface FileRoutesByFullPath {
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/document-search': typeof ApiDocumentSearchRoute
+  '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/models': typeof ApiModelsRouteWithChildren
   '/api/system': typeof ApiSystemRoute
   '/api/conversations/$id': typeof ApiConversationsIdRouteWithChildren
+  '/api/memories/$id': typeof ApiMemoriesIdRoute
   '/api/models/pull': typeof ApiModelsPullRoute
   '/api/conversations/$id/documents': typeof ApiConversationsIdDocumentsRouteWithChildren
   '/api/conversations/$id/documents/$documentId': typeof ApiConversationsIdDocumentsDocumentIdRoute
@@ -122,9 +136,11 @@ export interface FileRoutesByTo {
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/document-search': typeof ApiDocumentSearchRoute
+  '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/models': typeof ApiModelsRouteWithChildren
   '/api/system': typeof ApiSystemRoute
   '/api/conversations/$id': typeof ApiConversationsIdRouteWithChildren
+  '/api/memories/$id': typeof ApiMemoriesIdRoute
   '/api/models/pull': typeof ApiModelsPullRoute
   '/api/conversations/$id/documents': typeof ApiConversationsIdDocumentsRouteWithChildren
   '/api/conversations/$id/documents/$documentId': typeof ApiConversationsIdDocumentsDocumentIdRoute
@@ -139,9 +155,11 @@ export interface FileRoutesById {
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/document-search': typeof ApiDocumentSearchRoute
+  '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/models': typeof ApiModelsRouteWithChildren
   '/api/system': typeof ApiSystemRoute
   '/api/conversations/$id': typeof ApiConversationsIdRouteWithChildren
+  '/api/memories/$id': typeof ApiMemoriesIdRoute
   '/api/models/pull': typeof ApiModelsPullRoute
   '/api/conversations/$id/documents': typeof ApiConversationsIdDocumentsRouteWithChildren
   '/api/conversations/$id/documents/$documentId': typeof ApiConversationsIdDocumentsDocumentIdRoute
@@ -157,9 +175,11 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/conversations'
     | '/api/document-search'
+    | '/api/memories'
     | '/api/models'
     | '/api/system'
     | '/api/conversations/$id'
+    | '/api/memories/$id'
     | '/api/models/pull'
     | '/api/conversations/$id/documents'
     | '/api/conversations/$id/documents/$documentId'
@@ -173,9 +193,11 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/conversations'
     | '/api/document-search'
+    | '/api/memories'
     | '/api/models'
     | '/api/system'
     | '/api/conversations/$id'
+    | '/api/memories/$id'
     | '/api/models/pull'
     | '/api/conversations/$id/documents'
     | '/api/conversations/$id/documents/$documentId'
@@ -189,9 +211,11 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/conversations'
     | '/api/document-search'
+    | '/api/memories'
     | '/api/models'
     | '/api/system'
     | '/api/conversations/$id'
+    | '/api/memories/$id'
     | '/api/models/pull'
     | '/api/conversations/$id/documents'
     | '/api/conversations/$id/documents/$documentId'
@@ -206,6 +230,7 @@ export interface RootRouteChildren {
   ApiChatRoute: typeof ApiChatRoute
   ApiConversationsRoute: typeof ApiConversationsRouteWithChildren
   ApiDocumentSearchRoute: typeof ApiDocumentSearchRoute
+  ApiMemoriesRoute: typeof ApiMemoriesRouteWithChildren
   ApiModelsRoute: typeof ApiModelsRouteWithChildren
   ApiSystemRoute: typeof ApiSystemRoute
 }
@@ -268,6 +293,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDocumentSearchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/memories': {
+      id: '/api/memories'
+      path: '/api/memories'
+      fullPath: '/api/memories'
+      preLoaderRoute: typeof ApiMemoriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/models': {
       id: '/api/models'
       path: '/api/models'
@@ -288,6 +320,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/conversations/$id'
       preLoaderRoute: typeof ApiConversationsIdRouteImport
       parentRoute: typeof ApiConversationsRoute
+    }
+    '/api/memories/$id': {
+      id: '/api/memories/$id'
+      path: '/$id'
+      fullPath: '/api/memories/$id'
+      preLoaderRoute: typeof ApiMemoriesIdRouteImport
+      parentRoute: typeof ApiMemoriesRoute
     }
     '/api/models/pull': {
       id: '/api/models/pull'
@@ -351,6 +390,18 @@ const ApiConversationsRouteChildren: ApiConversationsRouteChildren = {
 const ApiConversationsRouteWithChildren =
   ApiConversationsRoute._addFileChildren(ApiConversationsRouteChildren)
 
+interface ApiMemoriesRouteChildren {
+  ApiMemoriesIdRoute: typeof ApiMemoriesIdRoute
+}
+
+const ApiMemoriesRouteChildren: ApiMemoriesRouteChildren = {
+  ApiMemoriesIdRoute: ApiMemoriesIdRoute,
+}
+
+const ApiMemoriesRouteWithChildren = ApiMemoriesRoute._addFileChildren(
+  ApiMemoriesRouteChildren,
+)
+
 interface ApiModelsRouteChildren {
   ApiModelsPullRoute: typeof ApiModelsPullRoute
 }
@@ -372,6 +423,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChatRoute: ApiChatRoute,
   ApiConversationsRoute: ApiConversationsRouteWithChildren,
   ApiDocumentSearchRoute: ApiDocumentSearchRoute,
+  ApiMemoriesRoute: ApiMemoriesRouteWithChildren,
   ApiModelsRoute: ApiModelsRouteWithChildren,
   ApiSystemRoute: ApiSystemRoute,
 }

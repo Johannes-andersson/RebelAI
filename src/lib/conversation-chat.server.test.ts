@@ -184,3 +184,73 @@ it("does not call embeddings or change normal chat context without attachments",
     { role: "user", content: "Hello" },
   ]);
 });
+
+it("acknowledges explicit memory only after durable storage and uses it in a separate conversation", async () => {
+  const first = await handleConversationChat(
+    request(randomUUID(), "Remember that Rebel AI is my main project."),
+    db,
+  );
+  expect(await first.text()).toContain("I’ll remember");
+  expect(handleOllamaChat).not.toHaveBeenCalled();
+  expect(db.memories.list()[0]?.content).toBe("Rebel AI is my main project.");
+  const original = id;
+  id = randomUUID();
+  db.create(id, null);
+  vi.mocked(handleOllamaChat).mockResolvedValue(
+    new Response('{"message":{"content":"Rebel AI"},"done":true}\n'),
+  );
+  await (await handleConversationChat(request(randomUUID(), "What is my project?"), db)).text();
+  const body = await vi.mocked(handleOllamaChat).mock.calls[0]![0].json();
+  expect(body.messages).toHaveLength(2);
+  expect(body.messages[0].content).toContain("Relevant saved user memories");
+  expect(body.messages[1]).toEqual({ role: "user", content: "What is my project?" });
+  expect(db.get(id).messages[1]).toMatchObject({ content: "Rebel AI", memoryUsed: true });
+  expect(db.get(original).messages).toHaveLength(2);
+});
+it("keeps memory and file contexts distinct while preserving streaming", async () => {
+  db.memories.create("Use short answers", id);
+  const file = db.documents.create(id, "code.txt", new TextEncoder().encode("Code: ORCHID"));
+  await processDocument(db.documents, id, file.id);
+  vi.mocked(handleOllamaChat).mockResolvedValue(
+    new Response('{"message":{"content":"ORCHID"},"done":true}\n'),
+  );
+  await (await handleConversationChat(request(randomUUID(), "What is the code?"), db)).text();
+  const body = await vi.mocked(handleOllamaChat).mock.calls[0]![0].json();
+  expect(body.messages).toHaveLength(3);
+  expect(body.messages[0].content).toContain("saved user memories");
+  expect(body.messages[0].content).not.toContain("ORCHID");
+  expect(body.messages[1].content).toContain("ORCHID");
+  expect(body.messages[1].content).not.toContain("Use short answers");
+});
+it.each(["disabled", "database failure", "embedding failure"])(
+  "continues ordinary streamed chat with %s",
+  async (mode) => {
+    db.memories.create("Remembered fact", id);
+    if (mode === "disabled") db.memories.setEnabled(false);
+    if (mode === "database failure")
+      vi.spyOn(db, "memories", "get").mockImplementation(() => {
+        throw new Error("memory unavailable");
+      });
+    if (mode === "embedding failure")
+      vi.mocked(requireLocalModel).mockRejectedValueOnce(new Error("offline"));
+    vi.mocked(handleOllamaChat).mockResolvedValue(
+      new Response('{"message":{"content":"Hello"},"done":true}\n'),
+    );
+    expect(await (await handleConversationChat(request(), db)).text()).toContain('"done":true');
+    expect((await vi.mocked(handleOllamaChat).mock.calls[0]![0].json()).messages).toEqual([
+      { role: "user", content: "Hello" },
+    ]);
+    expect(db.get(id).messages[1]).toMatchObject({ content: "Hello", memoryUsed: false });
+    vi.restoreAllMocks();
+  },
+);
+it("does not save an explicit instruction while memory is disabled", async () => {
+  db.memories.setEnabled(false);
+  expect(
+    await (
+      await handleConversationChat(request(randomUUID(), "Remember this: private fact"), db)
+    ).text(),
+  ).toContain("turned off");
+  expect(db.memories.list()).toEqual([]);
+  expect(handleOllamaChat).not.toHaveBeenCalled();
+});

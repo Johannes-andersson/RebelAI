@@ -1,3 +1,4 @@
+import { MemoryRepository } from "./memories.server";
 import { DocumentRepository } from "./documents.server";
 import { cancelDocumentJob } from "./document-processing.server";
 import { DatabaseSync } from "node:sqlite";
@@ -29,6 +30,17 @@ export function conversationDirectory() {
 export class ConversationRepository {
   private db: DatabaseSync;
   readonly documents: DocumentRepository;
+  private memoryRepository?: MemoryRepository;
+  get memories() {
+    return (this.memoryRepository ??= new MemoryRepository(this.db));
+  }
+  private memoryUsed(id: string) {
+    try {
+      return this.memories.wasUsed(id);
+    } catch {
+      return false;
+    }
+  }
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path);
@@ -76,7 +88,11 @@ export class ConversationRepository {
       .all(id) as unknown as StoredMessage[];
     return {
       ...conversation,
-      messages: messages.map((m) => ({ ...m, sources: this.documents.sources(m.id) })),
+      messages: messages.map((m) => ({
+        ...m,
+        sources: this.documents.sources(m.id),
+        memoryUsed: this.memoryUsed(m.id),
+      })),
     };
   }
   create(id: string, modelTag: string | null): Conversation {
@@ -154,8 +170,8 @@ export class ConversationRepository {
 // opens it again and recovers unfinished replies. Run one server per data folder.
 const local = globalThis as typeof globalThis & { rebelConversations?: ConversationRepository };
 export function getConversations() {
-  // Upgrade a development server that already held the pre-attachments repository.
-  if (local.rebelConversations && !local.rebelConversations.documents) {
+  // Upgrade a development server that already held the pre-memory repository.
+  if (local.rebelConversations && !Reflect.has(local.rebelConversations, "memories")) {
     local.rebelConversations.close();
     delete local.rebelConversations;
   }

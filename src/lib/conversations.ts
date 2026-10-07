@@ -17,6 +17,7 @@ const conversationSchema = summarySchema.extend({
       content: z.string(),
       createdAt: z.string(),
       status: z.enum(["pending", "complete", "interrupted", "error"]),
+      memoryUsed: z.boolean().optional(),
       sources: sourceSchema.array().optional(),
     }),
   ),

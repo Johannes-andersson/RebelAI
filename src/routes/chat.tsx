@@ -141,6 +141,9 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
                       )}
                     </p>
                     <MessageSources sources={m.sources} />
+                    {m.memoryUsed && m.content && (
+                      <p className="mt-2 text-xs text-muted-foreground">Memory used</p>
+                    )}
                   </div>
                 </div>
               ),

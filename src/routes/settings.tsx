@@ -1,3 +1,4 @@
+import { MemorySettings } from "@/components/memory-settings";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, PageHeader } from "@/components/app-shell";
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
-const tabs = ["General", "Models", "Privacy", "Advanced"] as const;
+const tabs = ["General", "Models", "Memory", "Privacy", "Advanced"] as const;
 type Tab = (typeof tabs)[number];
 
 function Row({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
@@ -74,6 +75,7 @@ function SettingsPage() {
               </Row>
             </div>
           )}
+          {tab === "Memory" && <MemorySettings />}
           {tab === "Privacy" && (
             <>
               <div className="mb-6 rounded-xl border border-primary/25 bg-primary-soft px-6 py-5">
