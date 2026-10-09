@@ -1,3 +1,4 @@
+import { calendarActionSchema } from "./calendar-action";
 import { performanceSchema } from "./generation-config";
 import { webSearchSchema } from "./web-search";
 import { sourceSchema } from "./document-config";
@@ -22,6 +23,7 @@ const conversationSchema = summarySchema.extend({
       webSearch: webSearchSchema.optional(),
       performance: performanceSchema.optional(),
       memoryUsed: z.boolean().optional(),
+      calendarAction: calendarActionSchema.optional(),
       sources: sourceSchema.array().optional(),
     }),
   ),

@@ -10,13 +10,16 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as ModelsRouteImport } from './routes/models'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ApiCalendarRouteImport } from './routes/api.calendar'
 import { Route as ApiChatRouteImport } from './routes/api.chat'
 import { Route as ApiConversationsRouteImport } from './routes/api.conversations'
 import { Route as ApiDocumentSearchRouteImport } from './routes/api.document-search'
+import { Route as ApiDocumentsRouteImport } from './routes/api.documents'
 import { Route as ApiInternetRouteImport } from './routes/api.internet'
 import { Route as ApiMemoriesRouteImport } from './routes/api.memories'
 import { Route as ApiModelSettingsRouteImport } from './routes/api.model-settings'
@@ -31,6 +34,11 @@ import { Route as ApiConversationsIdDocumentsDocumentIdRouteImport } from './rou
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CalendarRoute = CalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoute = ChatRouteImport.update({
@@ -53,6 +61,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCalendarRoute = ApiCalendarRouteImport.update({
+  id: '/api/calendar',
+  path: '/api/calendar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
   path: '/api/chat',
@@ -66,6 +79,11 @@ const ApiConversationsRoute = ApiConversationsRouteImport.update({
 const ApiDocumentSearchRoute = ApiDocumentSearchRouteImport.update({
   id: '/api/document-search',
   path: '/api/document-search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDocumentsRoute = ApiDocumentsRouteImport.update({
+  id: '/api/documents',
+  path: '/api/documents',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiInternetRoute = ApiInternetRouteImport.update({
@@ -123,13 +141,16 @@ const ApiConversationsIdDocumentsDocumentIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/calendar': typeof CalendarRoute
   '/chat': typeof ChatRoute
   '/files': typeof FilesRoute
   '/models': typeof ModelsRoute
   '/settings': typeof SettingsRoute
+  '/api/calendar': typeof ApiCalendarRoute
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/document-search': typeof ApiDocumentSearchRoute
+  '/api/documents': typeof ApiDocumentsRoute
   '/api/internet': typeof ApiInternetRoute
   '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/model-settings': typeof ApiModelSettingsRoute
@@ -143,13 +164,16 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/calendar': typeof CalendarRoute
   '/chat': typeof ChatRoute
   '/files': typeof FilesRoute
   '/models': typeof ModelsRoute
   '/settings': typeof SettingsRoute
+  '/api/calendar': typeof ApiCalendarRoute
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/document-search': typeof ApiDocumentSearchRoute
+  '/api/documents': typeof ApiDocumentsRoute
   '/api/internet': typeof ApiInternetRoute
   '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/model-settings': typeof ApiModelSettingsRoute
@@ -164,13 +188,16 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/calendar': typeof CalendarRoute
   '/chat': typeof ChatRoute
   '/files': typeof FilesRoute
   '/models': typeof ModelsRoute
   '/settings': typeof SettingsRoute
+  '/api/calendar': typeof ApiCalendarRoute
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/document-search': typeof ApiDocumentSearchRoute
+  '/api/documents': typeof ApiDocumentsRoute
   '/api/internet': typeof ApiInternetRoute
   '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/model-settings': typeof ApiModelSettingsRoute
@@ -186,13 +213,16 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/calendar'
     | '/chat'
     | '/files'
     | '/models'
     | '/settings'
+    | '/api/calendar'
     | '/api/chat'
     | '/api/conversations'
     | '/api/document-search'
+    | '/api/documents'
     | '/api/internet'
     | '/api/memories'
     | '/api/model-settings'
@@ -206,13 +236,16 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/calendar'
     | '/chat'
     | '/files'
     | '/models'
     | '/settings'
+    | '/api/calendar'
     | '/api/chat'
     | '/api/conversations'
     | '/api/document-search'
+    | '/api/documents'
     | '/api/internet'
     | '/api/memories'
     | '/api/model-settings'
@@ -226,13 +259,16 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/calendar'
     | '/chat'
     | '/files'
     | '/models'
     | '/settings'
+    | '/api/calendar'
     | '/api/chat'
     | '/api/conversations'
     | '/api/document-search'
+    | '/api/documents'
     | '/api/internet'
     | '/api/memories'
     | '/api/model-settings'
@@ -247,13 +283,16 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CalendarRoute: typeof CalendarRoute
   ChatRoute: typeof ChatRoute
   FilesRoute: typeof FilesRoute
   ModelsRoute: typeof ModelsRoute
   SettingsRoute: typeof SettingsRoute
+  ApiCalendarRoute: typeof ApiCalendarRoute
   ApiChatRoute: typeof ApiChatRoute
   ApiConversationsRoute: typeof ApiConversationsRouteWithChildren
   ApiDocumentSearchRoute: typeof ApiDocumentSearchRoute
+  ApiDocumentsRoute: typeof ApiDocumentsRoute
   ApiInternetRoute: typeof ApiInternetRoute
   ApiMemoriesRoute: typeof ApiMemoriesRouteWithChildren
   ApiModelSettingsRoute: typeof ApiModelSettingsRoute
@@ -268,6 +307,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/calendar': {
+      id: '/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof CalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chat': {
@@ -298,6 +344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/calendar': {
+      id: '/api/calendar'
+      path: '/api/calendar'
+      fullPath: '/api/calendar'
+      preLoaderRoute: typeof ApiCalendarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -317,6 +370,13 @@ declare module '@tanstack/react-router' {
       path: '/api/document-search'
       fullPath: '/api/document-search'
       preLoaderRoute: typeof ApiDocumentSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/documents': {
+      id: '/api/documents'
+      path: '/api/documents'
+      fullPath: '/api/documents'
+      preLoaderRoute: typeof ApiDocumentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/internet': {
@@ -456,13 +516,16 @@ const ApiModelsRouteWithChildren = ApiModelsRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CalendarRoute: CalendarRoute,
   ChatRoute: ChatRoute,
   FilesRoute: FilesRoute,
   ModelsRoute: ModelsRoute,
   SettingsRoute: SettingsRoute,
+  ApiCalendarRoute: ApiCalendarRoute,
   ApiChatRoute: ApiChatRoute,
   ApiConversationsRoute: ApiConversationsRouteWithChildren,
   ApiDocumentSearchRoute: ApiDocumentSearchRoute,
+  ApiDocumentsRoute: ApiDocumentsRoute,
   ApiInternetRoute: ApiInternetRoute,
   ApiMemoriesRoute: ApiMemoriesRouteWithChildren,
   ApiModelSettingsRoute: ApiModelSettingsRoute,

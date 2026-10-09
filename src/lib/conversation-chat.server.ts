@@ -1,3 +1,5 @@
+import { prepareCalendarAction } from "./calendar-action.server";
+import { validTimeZone } from "./calendar-time";
 import { performanceSchema, type GenerationPerformance } from "./generation-config";
 import { searchIntent } from "./search-intent";
 import { runWebSearch, disabledSearch } from "./web-search.server";
@@ -21,6 +23,7 @@ import { resolveModelTag } from "./ollama-config.server";
 import { isSupportedModel, canonicalModelTag } from "./model-config";
 
 const schema = z.object({
+  timeZone: z.string().max(100).refine(validTimeZone).optional(),
   revision: z
     .object({
       kind: z.enum(["regenerate", "edit"]),
@@ -107,6 +110,25 @@ export async function handleConversationChat(
       );
       controller.signal.throwIfAborted();
       save("complete");
+      request.signal.removeEventListener("abort", abort);
+      return new Response(JSON.stringify({ message: { content }, done: true }) + "\n", {
+        headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" },
+      });
+    }
+    const calendarDraft = await prepareCalendarAction(
+      prompt,
+      tag,
+      parsed.data.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      controller.signal,
+    );
+    controller.signal.throwIfAborted();
+    if (calendarDraft) {
+      content = db.calendar.stageAction(
+        assistantId,
+        revision?.userMessageId ?? messageId,
+        calendarDraft,
+      );
+      finalized = true;
       request.signal.removeEventListener("abort", abort);
       return new Response(JSON.stringify({ message: { content }, done: true }) + "\n", {
         headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" },

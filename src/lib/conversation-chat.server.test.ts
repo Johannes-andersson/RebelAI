@@ -16,6 +16,7 @@ vi.mock("./embeddings.server", () => ({
     embed: async (texts: string[]) => texts.map(() => [1, 0]),
   }),
   requireLocalModel: vi.fn(async () => {}),
+  localOllamaUrl: (path: string) => new URL(`http://127.0.0.1:11434/api/${path}`),
 }));
 let directory: string;
 let db: ConversationRepository;
@@ -575,4 +576,38 @@ it("cancelled replies persist elapsed duration without invented token speed", as
   expect(message.status).toBe("interrupted");
   expect(message.performance?.elapsedMs).toBeGreaterThanOrEqual(0);
   expect(message.performance?.tokensPerSecond).toBeUndefined();
+});
+
+it("routes calendar requests before ordinary generation or Brave and persists the preview", async () => {
+  const extraction = {
+    intent: "create",
+    title: "Call Mom",
+    dateExpression: "tomorrow",
+    startTime: "8 PM",
+    endDateExpression: "",
+    endTime: "",
+    allDay: false,
+    description: "",
+    location: "",
+    uncertainties: [],
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ message: { content: JSON.stringify(extraction) } })),
+  );
+  db.internet.setEnabled(true);
+  const reply = await handleConversationChat(
+    request(randomUUID(), "Add a reminder to call Mom tomorrow at 8 PM."),
+    db,
+  );
+  expect(reply.status).toBe(200);
+  expect(await reply.text()).toContain("Review the calendar event");
+  expect(handleOllamaChat).not.toHaveBeenCalled();
+  expect(db.calendar.list()).toHaveLength(0);
+  expect(db.get(id).messages[1]).toMatchObject({
+    status: "complete",
+    calendarAction: { status: "pending", draft: { title: "Call Mom", time: "20:00" } },
+  });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain("127.0.0.1");
 });

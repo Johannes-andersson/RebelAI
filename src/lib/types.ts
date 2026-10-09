@@ -43,6 +43,7 @@ export interface ChatMessage {
 }
 
 export interface StoredMessage extends ChatMessage {
+  calendarAction?: import("./calendar-action").CalendarAction | undefined;
   performance?: import("./generation-config").GenerationPerformance | undefined;
   webSearch?: import("./web-search").WebSearch | undefined;
   memoryUsed?: boolean | undefined;

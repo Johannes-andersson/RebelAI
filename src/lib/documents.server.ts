@@ -35,6 +35,23 @@ export class DocumentRepository {
       UPDATE documents SET error='The local document-search component could not be prepared. Retry to continue.'
         WHERE status='error' AND error LIKE '%ollama pull%';`);
   }
+  library(): (AttachedDocument & { conversationTitle: string })[] {
+    for (const row of this.db.prepare("SELECT id FROM documents WHERE status='ready'").all()) {
+      const id = String(row["id"]);
+      if (!this.storage.exists(id))
+        this.state(
+          id,
+          "error",
+          "The local file is missing. Remove it and attach the original again.",
+        );
+    }
+    return this.db
+      .prepare(
+        `SELECT d.*, c.title AS conversationTitle FROM documents d
+      JOIN conversations c ON c.id=d.conversationId ORDER BY d.createdAt DESC,d.rowid DESC`,
+      )
+      .all() as unknown as (AttachedDocument & { conversationTitle: string })[];
+  }
   list(conversationId: string): AttachedDocument[] {
     return this.db
       .prepare("SELECT * FROM documents WHERE conversationId=? ORDER BY createdAt, rowid")
@@ -54,6 +71,8 @@ export class DocumentRepository {
       filename
         .split(/[\\/]/)
         .pop()
+        // Strip control characters from uploaded filenames.
+        // eslint-disable-next-line no-control-regex
         ?.replace(/[\u0000-\u001f\u007f]/g, "")
         .trim() ?? "";
     const extension = name.split(".").pop()?.toLowerCase();

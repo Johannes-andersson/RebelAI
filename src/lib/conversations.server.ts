@@ -1,3 +1,4 @@
+import { CalendarRepository } from "./calendar.server";
 import { GenerationRepository } from "./generation-settings.server";
 import type { GenerationPerformance } from "./generation-config";
 import { InternetRepository } from "./internet.server";
@@ -33,6 +34,10 @@ export function conversationDirectory() {
 export class ConversationRepository {
   private db: DatabaseSync;
   readonly documents: DocumentRepository;
+  private calendarRepository?: CalendarRepository;
+  get calendar() {
+    return (this.calendarRepository ??= new CalendarRepository(this.db));
+  }
   private generationRepository?: GenerationRepository;
   get generation() {
     return (this.generationRepository ??= new GenerationRepository(this.db));
@@ -120,6 +125,7 @@ export class ConversationRepository {
         memoryUsed: this.memoryUsed(m.id),
         webSearch: this.webSearch(m.id),
         performance: this.generation.performance(m.id),
+        calendarAction: this.calendar.action(m.id),
       })),
     };
   }
@@ -275,8 +281,12 @@ export class ConversationRepository {
 // opens it again and recovers unfinished replies. Run one server per data folder.
 const local = globalThis as typeof globalThis & { rebelConversations?: ConversationRepository };
 export function getConversations() {
-  // Upgrade a development server that already held the pre-internet repository.
-  if (local.rebelConversations && !Reflect.has(local.rebelConversations, "generation")) {
+  // Upgrade a development server that still holds a repository from an earlier milestone.
+  if (
+    local.rebelConversations &&
+    (!Reflect.has(local.rebelConversations, "calendar") ||
+      typeof local.rebelConversations.calendar.action !== "function")
+  ) {
     local.rebelConversations.close();
     delete local.rebelConversations;
   }

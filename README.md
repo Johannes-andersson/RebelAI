@@ -550,3 +550,81 @@ uses the existing local Node server, not a new desktop installer.
 Ollama references: [runtime options](https://docs.ollama.com/modelfile),
 [chat statistics](https://docs.ollama.com/api/chat), and
 [loaded models](https://docs.ollama.com/api/ps).
+
+## Local Files library and Calendar
+
+The **Files** page lists actual uploaded PDF, TXT, and Markdown documents across
+conversations. Choose an existing conversation or create a new file conversation,
+then upload a document. Management reuses chat's upload, indexing, preparation
+progress, retry, and removal APIs. **Chat with files** opens the owning conversation;
+retrieval does not cross conversation boundaries. Metadata, originals, and indexes
+remain in the existing local data directory. Limits remain 10 MB per file and 20
+files per conversation. Folder import and OCR are not supported. Removing a file
+also removes its saved source excerpts; deleting its conversation removes its files.
+
+**Calendar** offers upcoming/all events, manual create/edit, and confirmed deletion.
+The existing SQLite database gains an additive `calendar_events` table and start-date
+index. Existing conversations, files, settings, and model preferences are not rewritten.
+Timed events store UTC instants and display in the computer's current time zone.
+All-day events store date-only values to avoid timezone shifts; optional all-day end
+dates are exclusive. An omitted end means no duration has been specified.
+
+**Describe event** is local deterministic assistance, not an Ollama call or an agent.
+It supports today/tomorrow, the next occurrence of a named weekday, ISO dates, and
+phrases such as "the 1st", with explicit AM/PM or 24-hour times. Bare hours such as
+"from 10 to 11" remain blank for clarification. No default duration is invented.
+Unsupported/ambiguous dates must be entered manually. This limited English parser
+is not general natural-language understanding: review every field, including
+month, timezone and daylight-saving transitions. Only **Confirm and save** persists
+a draft, and the API validates all data and requires `confirmed: true`. Drafts are
+not saved when cancelled. The Calendar page uses this deterministic parser; normal chat additionally supports
+reviewed event creation through the local action router described below. There are no notifications, recurrence,
+calendar integrations, invites, or cloud synchronization.
+
+Visible branding uses the existing Rebel AI wordmark and a matching original R
+favicon (SVG plus legacy ICO fallback). Lovable development/build integration and
+repository provenance remain; these are not user-facing product branding.
+
+## Calendar actions from normal chat
+
+Chat routes likely calendar requests through a small application-controlled action
+handler before retrieval, memory, or Brave search. A cheap candidate gate avoids
+extra inference for unrelated messages; the selected local Ollama model classifies
+actual event requests versus hypothetical discussions and extracts bounded JSON
+using [Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
+It cannot execute calendar operations. Only the latest user message is provided to
+this extractor, not documents or web snippets.
+
+The server supplies its actual current date resolved in the browser's IANA timezone.
+Relative/weekday dates and explicit times are resolved in application code; model
+normalization is not trusted to invent a missing date or time. Named month dates
+without a year use the next occurrence, shown for review. “Next Tuesday” uses the
+next Tuesday with an explicit review notice. Unknown dates, bare ambiguous hours,
+recurrence and explicit alternative timezones require editing the preview.
+No duration is assumed. DST gaps and repeated times require an unambiguous time.
+The app currently uses the computer/browser timezone; there is no separate timezone
+settings screen. Drafts preserve the timezone in which they were prepared.
+
+Chat previews offer **Confirm event**, **Edit event**, and **Cancel event**. Missing
+details open editable clarification fields directly in the preview. Follow-up chat
+messages are independent requests; enter clarifications in the preview rather than
+expecting a multi-turn planning agent. The existing `/api/calendar` endpoint handles
+confirmation and cancellation with strict validation and same-origin checks.
+
+The same SQLite database gains `calendar_actions` (message-linked draft/status) and
+`calendar_action_receipts` (one save per originating user message), plus an additive
+`location` column on `calendar_events`. Event insertion, the receipt, action status,
+and chat confirmation commit atomically. Double-clicks and retries return the same
+saved result. Separately submitted confirmations with identical event details reuse
+the existing event. Regenerating or editing a previously confirmed turn does not create
+a second event; submit a fresh request if you intend another event. Removed previews
+cannot be confirmed, cancelled previews remain cancelled, and unconfirmed previews
+expire after 24 hours. Deleting chat history does not delete confirmed calendar
+events. A saved chat card records the original save even if the event is later edited
+or removed in Calendar. No automatic alerts or background reminders are scheduled.
+
+Calendar actions require the selected model to run locally and support structured
+JSON output. Extraction failures leave a retryable chat error and never create an
+event. Ordinary chat retains the existing streaming, cancellation, history, model
+selection, and internet-permission behavior. No external API is used for calendar
+classification or creation.

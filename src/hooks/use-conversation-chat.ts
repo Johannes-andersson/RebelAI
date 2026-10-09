@@ -156,6 +156,7 @@ export function useConversationChat(id: string | undefined) {
           conversationId: id,
           messageId,
           modelId: selected,
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           content,
           ...(revision ? { revision } : {}),
         },

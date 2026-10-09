@@ -17,6 +17,7 @@ const nav = [
   { to: "/chat", label: "Chats" },
   { to: "/models", label: "Models" },
   { to: "/files", label: "Files" },
+  { to: "/calendar", label: "Calendar" },
   { to: "/settings", label: "Settings" },
 ] as const;
 

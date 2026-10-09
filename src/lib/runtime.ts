@@ -1,6 +1,7 @@
 import type { WebSearch } from "./web-search";
 import { readChatStream } from "./chat-stream";
 export interface ChatRequest {
+  timeZone?: string;
   revision?: { kind: "regenerate" | "edit"; userMessageId: string; expectedTailId: string };
   modelId: string;
   conversationId: string;

@@ -18,6 +18,11 @@ async function request(conversationId: string, id = "", options?: RequestInit) {
   return response.status === 204 ? null : response.json();
 }
 export const documents = {
+  async library(signal?: AbortSignal) {
+    const response = await fetch("/api/documents", { cache: "no-store", signal: signal ?? null });
+    if (!response.ok) throw new Error("Could not load local files. Please retry.");
+    return documentSchema.array().parse(await response.json());
+  },
   async searchStatus(signal?: AbortSignal) {
     const response = await fetch("/api/document-search", {
       cache: "no-store",

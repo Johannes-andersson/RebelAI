@@ -1,3 +1,4 @@
+import { ChatCalendarAction } from "@/components/chat-calendar-action";
 import { GenerationPerformance } from "@/components/generation-performance";
 import { AssistantMessage } from "@/components/assistant-message";
 import { CopyButton } from "@/components/copy-button";
@@ -263,6 +264,14 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
                           </button>
                         )}
                     </div>
+                    {m.calendarAction && (
+                      <ChatCalendarAction
+                        key={m.calendarAction.id}
+                        action={m.calendarAction}
+                        disabled={chat.pending}
+                        conversationId={m.conversationId}
+                      />
+                    )}
                     <GenerationPerformance message={m} />
                     <MessageSources sources={m.sources} />
                     <WebSources search={m.webSearch} />
