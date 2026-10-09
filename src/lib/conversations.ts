@@ -1,3 +1,4 @@
+import { performanceSchema } from "./generation-config";
 import { webSearchSchema } from "./web-search";
 import { sourceSchema } from "./document-config";
 import { z } from "zod";
@@ -19,6 +20,7 @@ const conversationSchema = summarySchema.extend({
       createdAt: z.string(),
       status: z.enum(["pending", "complete", "interrupted", "error"]),
       webSearch: webSearchSchema.optional(),
+      performance: performanceSchema.optional(),
       memoryUsed: z.boolean().optional(),
       sources: sourceSchema.array().optional(),
     }),

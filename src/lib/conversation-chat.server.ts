@@ -1,3 +1,4 @@
+import { performanceSchema, type GenerationPerformance } from "./generation-config";
 import { searchIntent } from "./search-intent";
 import { runWebSearch, disabledSearch } from "./web-search.server";
 import type { WebSearch } from "./web-search";
@@ -43,10 +44,19 @@ export async function handleConversationChat(
   let assistantId: string | undefined;
   let content = "";
   let finalized = false;
+  let performance: GenerationPerformance | undefined;
+  let started = 0;
   const controller = new AbortController();
   const save = (status: "pending" | "complete" | "interrupted" | "error") => {
     if (!db || !assistantId || finalized) return;
-    db.saveReply(assistantId, content, status);
+    db.saveReply(
+      assistantId,
+      content,
+      status,
+      performance
+        ? { ...performance, elapsedMs: Math.max(0, globalThis.performance.now() - started) }
+        : undefined,
+    );
     if (status !== "pending") finalized = true;
   };
   const abort = () => {
@@ -126,7 +136,8 @@ export async function handleConversationChat(
       prompt,
       conversation.messages.filter((m) => m.id !== (revision?.userMessageId ?? messageId)),
     );
-    const getUpstream = (web?: WebSearch) => {
+    const preferences = db.generation.get(tag);
+    const getUpstream = async (web?: WebSearch) => {
       controller.signal.throwIfAborted();
       // Recheck after asynchronous work: disabling/clearing memory remains effective.
       try {
@@ -136,14 +147,31 @@ export async function handleConversationChat(
         memories = [];
       }
       const messages = buildChatContext(conversation, documents, memories, web);
-      return handleOllamaChat(
+      started = globalThis.performance.now();
+      performance = { modelTag: tag, elapsedMs: 0 };
+      const response = await handleOllamaChat(
         new Request(request.url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({ modelId, messages }),
         }),
+        preferences,
+        messages.length - conversation.messages.filter((m) => m.status === "complete").length,
       );
+      const header = response.headers.get("X-Rebel-Generation");
+      if (header) {
+        try {
+          performance = performanceSchema.parse({
+            ...JSON.parse(decodeURIComponent(header)),
+            modelTag: tag,
+            elapsedMs: 0,
+          });
+        } catch {
+          /* Ignore invalid runtime metadata. */
+        }
+      }
+      return response;
     };
     // Ordinary chat retains its existing HTTP errors; searching starts a status stream.
     const upstream = intent.needed ? undefined : await getUpstream();
@@ -190,6 +218,7 @@ export async function handleConversationChat(
           for await (const event of readChatStream(response.body, controller.signal)) {
             if (closed) break;
             content += event.text;
+            if (performance && event.done) performance = { ...performance, ...event.metrics };
             // Commit before exposing tokens, especially the final done event.
             save(event.done ? "complete" : "pending");
             out.enqueue(

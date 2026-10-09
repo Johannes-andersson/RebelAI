@@ -1,6 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleOllamaChat } from "./ollama.server";
 
+vi.mock("./generation.server", () => ({
+  prepareGeneration: vi.fn(async (_tag, _preferences, messages) => ({
+    messages,
+    options: { num_ctx: 2048, num_predict: 512 },
+    estimatedPromptTokens: 100,
+    omittedMessages: 0,
+  })),
+}));
+
 const payload = {
   modelId: "qwen-7b",
   messages: [
@@ -40,6 +49,7 @@ describe("Ollama server adapter", () => {
       model: "qwen2.5:7b",
       messages: payload.messages,
       stream: true,
+      options: { num_ctx: 2048, num_predict: 512 },
     });
     expect(options!.signal).toBe(incoming.signal);
     await response.body!.cancel();

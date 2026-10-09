@@ -86,7 +86,7 @@ export function useConversationChat(id: string | undefined) {
     if (detail.data && !request.current) setMessages(detail.data.messages);
   }, [detail.data]);
   useEffect(() => {
-    if (!detail.data || !inventoryReady || !inventoryAvailable || restored.current) return;
+    if (!detail.data || !inventoryReady || !inventoryAvailable) return;
     restored.current = true;
     if (detail.data.modelTag) {
       const model = state.installedModels.find((m) => m.tag === detail.data!.modelTag);
@@ -206,7 +206,8 @@ export function useConversationChat(id: string | undefined) {
 
   async function selectModel(modelId: string) {
     const model = state.installedModels.find((m) => m.id === modelId);
-    if (!id || !model || request.current || saving) return;
+    if (!id || !model || request.current || saving || messages.some((m) => m.status === "pending"))
+      return;
     setSaving(true);
     try {
       const updated = await conversations.update(id, model.tag);

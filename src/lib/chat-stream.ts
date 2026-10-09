@@ -1,3 +1,4 @@
+import { ollamaMetrics } from "./generation-config";
 import { webSearchSchema } from "./web-search";
 // Shared decoding for the local chat stream. Neither screen knows Ollama's wire format.
 export async function* readChatStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal) {
@@ -39,6 +40,7 @@ export async function* readChatStream(body: ReadableStream<Uint8Array>, signal?:
           throw new Error("Ollama returned no reply. Please try again.");
         yield {
           text,
+          metrics: ollamaMetrics(event),
           done: event.done === true,
           webSearch: search.success ? search.data : undefined,
         };

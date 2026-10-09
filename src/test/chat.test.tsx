@@ -442,3 +442,18 @@ it("does not force scroll while the reader has scrolled up", async () => {
   expect(scrollTo).not.toHaveBeenCalled();
   await act(async () => finish());
 });
+it("does not silently select a fallback when a model disappears during inventory refresh", async () => {
+  view();
+  await ready();
+  vi.mocked(chatRuntime.streamReply).mockRejectedValueOnce(new Error("Model disappeared"));
+  send("Hello");
+  await screen.findByRole("alert");
+  vi.mocked(modelManager.list).mockResolvedValue({ installed: [llama], supported: [] });
+  fireEvent.click(screen.getByRole("button", { name: "Reload history" }));
+  await waitFor(() =>
+    expect(screen.getByRole("alert")).toHaveTextContent("saved model qwen2.5:7b is not installed"),
+  );
+  expect(screen.getByRole("combobox")).toHaveValue("");
+  expect(records.get("one")?.modelTag).toBe(qwen.tag);
+  expect(conversations.update).not.toHaveBeenCalled();
+});

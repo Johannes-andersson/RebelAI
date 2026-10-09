@@ -482,3 +482,71 @@ conversations or pressing Stop aborts the search/model request and retains the
 existing interrupted-message behavior. A search failure does not duplicate or
 replace conversation history. No cloud LLM, account, telemetry, or new database
 is introduced.
+
+## Optional model controls and response performance
+
+Open **Settings → Models** to configure an installed model. This editor does not
+switch the model in an existing conversation; use the Chat model selector for
+that. Each exact canonical Ollama tag has its own preferences in the existing
+SQLite database (`model_preferences`). Removing a model does not erase its
+preferences. **Reset to Default** saves Automatic mode and clears overrides.
+Settings affect the next request, including edited and regenerated replies;
+already running requests keep their captured settings.
+
+Automatic mode omits `temperature` and `top_p`, preserving the model/runtime's
+sampling defaults. It sends a hardware-aware `num_ctx` and a finite
+`num_predict` (up to 1,024 tokens, or one quarter of context). Custom mode accepts
+temperature 0–2, top-p above 0 through 1, context 512–32,768 tokens within the
+model/hardware limit, and output 1–8,192 tokens with room reserved for the prompt.
+These are deliberately bounded Rebel AI controls, not the full Ollama option
+range. Blank custom fields use automatic/model defaults. All values are validated
+server-side; arbitrary browser options are not forwarded to Ollama.
+
+The server checks `/api/tags` and `/api/show` on each inference request. It rejects
+missing models, explicitly non-completion models, and cloud-backed models. The
+model's architecture-specific context limit is used when available. Older Ollama
+versions without capability/context metadata use conservative limits and an
+explicit notice; there is no universal per-option capability API. Unsupported
+runtime options/errors are surfaced without automatically retrying or silently
+changing saved preferences.
+
+Hardware recommendations reuse local OS detection and the onboarding reserve:
+at least 4 GiB or 25% of total system RAM. Estimated weights use 1.25× model disk
+size. Remaining estimated headroom below 2/4/8/16 GiB permits at most
+2,048/4,096/8,192/16,384 tokens respectively; more permits 32,768. The model's
+reported limit also caps context. Automatic mode uses at most 8,192; unknown
+hardware, size, or model context falls back to 2,048. OS free RAM is a snapshot,
+not a reliable measure of reclaimable memory or VRAM. Low free RAM generates a
+warning and never silently changes explicit values. Weight estimates exclude
+architecture-dependent context caches and runtime overhead, and cannot prevent
+all out-of-memory failures. Larger windows do not guarantee long-context quality.
+
+The complete assembled prompt—including search snippets, document context and
+existing memory context—is budgeted before inference. The estimate is UTF-8
+bytes / 3 plus per-message/template allowances, not an exact tokenizer count.
+Space is reserved for maximum output. Older whole turns are omitted first while
+preserving application/source context and the newest user turn. Saved SQLite
+history is never trimmed. If that fixed context is too large, the request fails
+with instructions to shorten it or adjust settings; sources are not silently
+removed. Actual tokenization and model templates may differ from the estimate.
+
+**Response performance** below each new assistant reply records its actual model
+tag, requested options, measured request time, prompt estimate, and omitted-turn
+count in `message_performance` (cascades with message deletion). Ollama's final
+`eval_count / eval_duration * 1e9` supplies tokens/second; `total_duration` supplies
+runtime duration. These counters are saved only when actually returned. Request
+time includes model inspection/loading and inference but excludes prior web
+search/retrieval. Cancelled/error replies retain status, elapsed time and any
+partial text; no speed is invented. A crash leaves the last saved elapsed-time
+checkpoint, not a reconstructed total. Older replies without measurements omit
+the view. Both preferences and performance survive local server restarts.
+
+The optional details panel queries `/api/ps` on opening/refresh/save to report a
+loaded-model snapshot and Ollama's reported loaded size/context, if available.
+It does not infer loading from model selection, measure exact VRAM, or continuously
+poll resources. Node OS APIs work on macOS/Windows/Linux; platform support here
+uses the existing local Node server, not a new desktop installer.
+
+Ollama references: [runtime options](https://docs.ollama.com/modelfile),
+[chat statistics](https://docs.ollama.com/api/chat), and
+[loaded models](https://docs.ollama.com/api/ps).

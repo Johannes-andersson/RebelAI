@@ -1,3 +1,5 @@
+import { prepareGeneration } from "./generation.server";
+import { automaticPreferences, type GenerationPreferences } from "./generation-config";
 import { embeddingModel } from "./embedding-config.server";
 import { z } from "zod";
 import { getModelInventory } from "./ollama-models.server";
@@ -9,17 +11,25 @@ import {
   ModelServiceError,
 } from "./ollama-config.server";
 
-const chatRequest = z.object({
-  modelId: z
-    .string()
-    .max(512)
-    .refine((id) => isSupportedModel(id) || id.startsWith("ollama:")),
-  messages: z
-    .array(z.object({ role: z.enum(["system", "user", "assistant"]), content: z.string().min(1) }))
-    .min(1),
-});
+const chatRequest = z
+  .object({
+    modelId: z
+      .string()
+      .max(512)
+      .refine((id) => isSupportedModel(id) || id.startsWith("ollama:")),
+    messages: z
+      .array(
+        z.object({ role: z.enum(["system", "user", "assistant"]), content: z.string().min(1) }),
+      )
+      .min(1),
+  })
+  .strict();
 
-export async function handleOllamaChat(request: Request): Promise<Response> {
+export async function handleOllamaChat(
+  request: Request,
+  preferences: GenerationPreferences = automaticPreferences,
+  prefixCount = 0,
+): Promise<Response> {
   // This endpoint is for the local app; don't allow other sites to drive Ollama.
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) {
@@ -51,13 +61,24 @@ export async function handleOllamaChat(request: Request): Promise<Response> {
   } catch (error) {
     return modelErrorResponse(error);
   }
+  let prepared;
+  try {
+    prepared = await prepareGeneration(model, preferences, messages, prefixCount, request.signal);
+  } catch (error) {
+    return modelErrorResponse(error);
+  }
   let upstream: Response;
   try {
     upstream = await fetch(url, {
       method: "POST",
       redirect: "error",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages, stream: true }),
+      body: JSON.stringify({
+        model,
+        messages: prepared.messages,
+        stream: true,
+        options: prepared.options,
+      }),
       signal: request.signal,
     });
   } catch (error) {
@@ -85,7 +106,17 @@ export async function handleOllamaChat(request: Request): Promise<Response> {
 
   // Forward the stream directly; buffering the whole response would break streaming.
   return new Response(upstream.body, {
-    headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" },
+    headers: {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-store",
+      "X-Rebel-Generation": encodeURIComponent(
+        JSON.stringify({
+          options: prepared.options,
+          estimatedPromptTokens: prepared.estimatedPromptTokens,
+          omittedMessages: prepared.omittedMessages,
+        }),
+      ),
+    },
   });
 }
 

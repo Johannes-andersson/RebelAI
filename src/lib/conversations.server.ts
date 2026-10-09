@@ -1,3 +1,5 @@
+import { GenerationRepository } from "./generation-settings.server";
+import type { GenerationPerformance } from "./generation-config";
 import { InternetRepository } from "./internet.server";
 import { MemoryRepository } from "./memories.server";
 import { DocumentRepository } from "./documents.server";
@@ -31,6 +33,10 @@ export function conversationDirectory() {
 export class ConversationRepository {
   private db: DatabaseSync;
   readonly documents: DocumentRepository;
+  private generationRepository?: GenerationRepository;
+  get generation() {
+    return (this.generationRepository ??= new GenerationRepository(this.db));
+  }
   private internetRepository?: InternetRepository;
   get internet() {
     return (this.internetRepository ??= new InternetRepository(this.db));
@@ -113,6 +119,7 @@ export class ConversationRepository {
         sources: this.documents.sources(m.id),
         memoryUsed: this.memoryUsed(m.id),
         webSearch: this.webSearch(m.id),
+        performance: this.generation.performance(m.id),
       })),
     };
   }
@@ -239,7 +246,12 @@ export class ConversationRepository {
       return this.get(id);
     });
   }
-  saveReply(id: string, content: string, status: StoredMessage["status"]) {
+  saveReply(
+    id: string,
+    content: string,
+    status: StoredMessage["status"],
+    performance?: GenerationPerformance,
+  ) {
     this.transaction(() => {
       const result = this.db
         .prepare("UPDATE messages SET content=?, status=? WHERE id=? AND status='pending'")
@@ -249,6 +261,7 @@ export class ConversationRepository {
           "This reply is no longer active. The conversation may have been deleted.",
           409,
         );
+      if (performance) this.generation.savePerformance(id, performance);
       this.db
         .prepare(
           "UPDATE conversations SET updatedAt=? WHERE id=(SELECT conversationId FROM messages WHERE id=?)",
@@ -263,7 +276,7 @@ export class ConversationRepository {
 const local = globalThis as typeof globalThis & { rebelConversations?: ConversationRepository };
 export function getConversations() {
   // Upgrade a development server that already held the pre-internet repository.
-  if (local.rebelConversations && !Reflect.has(local.rebelConversations, "reviseTurn")) {
+  if (local.rebelConversations && !Reflect.has(local.rebelConversations, "generation")) {
     local.rebelConversations.close();
     delete local.rebelConversations;
   }

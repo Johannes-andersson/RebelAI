@@ -139,7 +139,7 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
         </ul>
         <div className="mt-auto flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm">
           <StatusDot tone={running ? "success" : "muted"} />
-          {running ? "Local AI Ready" : "No model running"}
+          {running ? "Local model selected" : "No model selected"}
         </div>
       </aside>
       <main className="flex min-w-0 flex-1 flex-col">{children}</main>

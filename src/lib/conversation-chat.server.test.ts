@@ -501,3 +501,78 @@ it("cancelled regeneration saves partial text as interrupted", async () => {
     status: "interrupted",
   });
 });
+
+it.each(["regenerate", "edit"] as const)(
+  "%s loads current per-model preferences and preserves Brave context",
+  async (kind) => {
+    const user = randomUUID();
+    setupSearch().mockImplementation(async () => Response.json({ web: { results: [webFixture] } }));
+    await (await handleConversationChat(request(user, "Latest React version?"), db)).text();
+    const preferences = {
+      mode: "custom" as const,
+      temperature: 0.25,
+      context: 4096,
+      maxOutput: 250,
+      topP: 0.7,
+    };
+    db.generation.set("qwen2.5:7b", preferences);
+    await (
+      await handleConversationChat(await revisionRequest(kind, user, "Latest Python version?"), db)
+    ).text();
+    const call = vi.mocked(handleOllamaChat).mock.calls.at(-1)!;
+    expect(call[1]).toEqual(preferences);
+    expect(call[2]).toBe(2);
+    expect(db.get(id).messages.at(-1)?.webSearch?.status).toBe("complete");
+    expect(db.get(id).messages.at(-1)?.performance?.modelTag).toBe("qwen2.5:7b");
+  },
+);
+it("persists final Ollama measurements with the completed streamed reply", async () => {
+  vi.mocked(handleOllamaChat).mockResolvedValue(
+    new Response(
+      '{"message":{"content":"Measured answer"},"done":true,"eval_count":20,"eval_duration":1000000000,"total_duration":2000000000}\n',
+      {
+        headers: {
+          "X-Rebel-Generation": encodeURIComponent(
+            JSON.stringify({
+              options: { num_ctx: 2048, num_predict: 512 },
+              estimatedPromptTokens: 100,
+              omittedMessages: 2,
+            }),
+          ),
+        },
+      },
+    ),
+  );
+  await (await handleConversationChat(request(), db)).text();
+  expect(db.get(id).messages[1]?.performance).toMatchObject({
+    outputTokens: 20,
+    tokensPerSecond: 20,
+    runtimeMs: 2000,
+    options: { num_ctx: 2048, num_predict: 512 },
+    omittedMessages: 2,
+  });
+  db.close();
+  db = new ConversationRepository(join(directory, "db.sqlite"));
+  expect(db.get(id).messages[1]?.performance?.tokensPerSecond).toBe(20);
+});
+it("cancelled replies persist elapsed duration without invented token speed", async () => {
+  let out!: ReadableStreamDefaultController<Uint8Array>;
+  vi.mocked(handleOllamaChat).mockResolvedValue(
+    new Response(
+      new ReadableStream({
+        start(c) {
+          out = c;
+        },
+      }),
+    ),
+  );
+  const response = await handleConversationChat(request(), db);
+  const reader = response.body!.getReader();
+  out.enqueue(encoder.encode('{"message":{"content":"Partial"}}\n'));
+  await reader.read();
+  await reader.cancel();
+  const message = db.get(id).messages[1]!;
+  expect(message.status).toBe("interrupted");
+  expect(message.performance?.elapsedMs).toBeGreaterThanOrEqual(0);
+  expect(message.performance?.tokensPerSecond).toBeUndefined();
+});

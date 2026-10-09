@@ -1,11 +1,10 @@
+import { ModelSettings } from "@/components/model-settings";
 import { InternetSetting } from "@/components/internet-setting";
 import { MemorySettings } from "@/components/memory-settings";
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { Toggle } from "@/components/ui-bits";
-import { getModel, models } from "@/lib/mock-data";
-import { appStore, useAppState } from "@/lib/store";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -52,7 +51,6 @@ function SettingsPage() {
   const [tab, setTab] = useState<Tab>("General");
   const [t, setT] = useState({ local: true, diagnostics: false, launch: true, dev: false });
   const [advOpen, setAdvOpen] = useState(false);
-  const { activeModelId, installed } = useAppState();
 
   return (
     <AppShell>
@@ -87,30 +85,7 @@ function SettingsPage() {
               </Row>
             </div>
           )}
-          {tab === "Models" && (
-            <div className="panel px-6">
-              <Row title="Default model" desc="Used for new chats.">
-                <select
-                  className={field}
-                  value={activeModelId}
-                  onChange={(e) => appStore.set({ activeModelId: e.target.value })}
-                >
-                  {models
-                    .filter((m) => installed.includes(m.id))
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                </select>
-              </Row>
-              <Row title="Storage used" desc="Where your models live on disk.">
-                <span className="font-mono text-sm">
-                  {installed.reduce((a, id) => a + getModel(id).sizeGB, 0).toFixed(1)} GB
-                </span>
-              </Row>
-            </div>
-          )}
+          {tab === "Models" && <ModelSettings />}
           {tab === "Memory" && <MemorySettings />}
           {tab === "Privacy" && (
             <>

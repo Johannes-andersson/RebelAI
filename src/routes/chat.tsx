@@ -1,3 +1,4 @@
+import { GenerationPerformance } from "@/components/generation-performance";
 import { AssistantMessage } from "@/components/assistant-message";
 import { CopyButton } from "@/components/copy-button";
 import { webAnswerText } from "@/lib/web-search";
@@ -91,9 +92,14 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
       <header className="flex items-center justify-between border-b border-border px-8 py-4">
         <div>
           <h1 className="font-medium">Rebel AI</h1>
-          <p className="text-xs text-muted-foreground">{modelName} • Local</p>
+          <p className="text-xs text-muted-foreground">
+            {chat.loading || chat.modelLoading
+              ? "Checking saved model…"
+              : `${modelName} • Local${model ? ` · ${model.tag}` : ""}`}
+          </p>
         </div>
         <select
+          aria-label="Conversation model"
           value={activeModelId}
           disabled={
             chat.pending ||
@@ -257,6 +263,7 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
                           </button>
                         )}
                     </div>
+                    <GenerationPerformance message={m} />
                     <MessageSources sources={m.sources} />
                     <WebSources search={m.webSearch} />
                     {m.memoryUsed && m.content && (
