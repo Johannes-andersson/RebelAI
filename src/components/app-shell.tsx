@@ -25,6 +25,7 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
   const navigate = useNavigate();
   const search = useSearch({ strict: false });
   const history = useConversations();
+  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState<{ id: string; title: string } | null>(null);
   async function newChat() {
     onNewChat?.();
@@ -75,14 +76,25 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
         {history.recent.isPending && (
           <p className="px-3 py-2 text-xs text-subtle">Loading conversations…</p>
         )}
-        {(history.recent.error || history.create.error || history.remove.error) && (
+        {(history.recent.error ||
+          history.create.error ||
+          history.remove.error ||
+          history.rename.error) && (
           <div role="alert" className="px-3 py-2 text-xs text-destructive">
-            {(history.recent.error || history.create.error || history.remove.error)?.message}
+            {
+              (
+                history.recent.error ||
+                history.create.error ||
+                history.remove.error ||
+                history.rename.error
+              )?.message
+            }
             <button
               className="link-quiet mt-1"
               onClick={() => {
                 history.create.reset();
                 history.remove.reset();
+                history.rename.reset();
                 void history.recent.refetch();
               }}
             >
@@ -105,6 +117,16 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
                 {c.title}
               </Link>
               <button
+                aria-label={`Rename conversation: ${c.title}`}
+                className="rounded px-1 py-1 text-xs text-subtle hover:text-foreground"
+                onClick={() => {
+                  history.rename.reset();
+                  setRenaming({ id: c.id, title: c.title });
+                }}
+              >
+                Rename
+              </button>
+              <button
                 aria-label={`Delete conversation: ${c.title}`}
                 disabled={history.remove.isPending}
                 onClick={() => setDeleting(c)}
@@ -121,6 +143,56 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
         </div>
       </aside>
       <main className="flex min-w-0 flex-1 flex-col">{children}</main>
+      <AlertDialog
+        open={!!renaming}
+        onOpenChange={(open) => {
+          if (!open && !history.rename.isPending) setRenaming(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogTitle>Rename conversation</AlertDialogTitle>
+          <AlertDialogDescription>Choose a title up to 100 characters.</AlertDialogDescription>
+          <form
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!renaming || !renaming.title.trim() || history.rename.isPending) return;
+              try {
+                await history.rename.mutateAsync(renaming);
+                setRenaming(null);
+              } catch {
+                /* Keep the draft available for retry. */
+              }
+            }}
+          >
+            <input
+              autoFocus
+              aria-label="Conversation title"
+              maxLength={100}
+              className="my-3 w-full rounded border border-border bg-panel p-2"
+              value={renaming?.title ?? ""}
+              disabled={history.rename.isPending}
+              onChange={(e) => {
+                if (renaming) setRenaming({ ...renaming, title: e.target.value });
+              }}
+            />
+            {history.rename.error && (
+              <p role="alert" className="mb-2 text-sm text-destructive">
+                {history.rename.error.message}
+              </p>
+            )}
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={history.rename.isPending}>Cancel</AlertDialogCancel>
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={!renaming?.title.trim() || history.rename.isPending}
+              >
+                {history.rename.isPending ? "Saving…" : "Save title"}
+              </button>
+            </AlertDialogFooter>
+          </form>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={!!deleting}
         onOpenChange={(open) => {

@@ -1,3 +1,6 @@
+import { searchIntent } from "./search-intent";
+import { runWebSearch, disabledSearch } from "./web-search.server";
+import type { WebSearch } from "./web-search";
 import { explicitMemoryContent } from "./memory-config";
 import { captureMemory, recallMemories } from "./memory-service.server";
 import { buildChatContext } from "./chat-context.server";
@@ -17,6 +20,13 @@ import { resolveModelTag } from "./ollama-config.server";
 import { isSupportedModel, canonicalModelTag } from "./model-config";
 
 const schema = z.object({
+  revision: z
+    .object({
+      kind: z.enum(["regenerate", "edit"]),
+      userMessageId: z.string().uuid(),
+      expectedTailId: z.string().max(100),
+    })
+    .optional(),
   conversationId: z.string().uuid(),
   messageId: z.string().uuid(),
   modelId: z
@@ -55,9 +65,17 @@ export async function handleConversationChat(
         "Choose a conversation and model, and send a non-empty message.",
         400,
       );
-    const { conversationId, messageId, modelId, content: prompt } = parsed.data;
+    const { conversationId, messageId, modelId, revision } = parsed.data;
+    let prompt = parsed.data.content;
     db = repository ?? getConversations();
-    db.get(conversationId);
+    const existing = db.get(conversationId);
+    if (revision?.kind === "regenerate") {
+      const original = existing.messages.find(
+        (m) => m.id === revision.userMessageId && m.role === "user",
+      );
+      if (!original) throw new ConversationError("The original message no longer exists.", 409);
+      prompt = original.content;
+    }
     request.signal.addEventListener("abort", abort, { once: true });
     if (request.signal.aborted) controller.abort();
     controller.signal.throwIfAborted();
@@ -65,7 +83,9 @@ export async function handleConversationChat(
       ? resolveModelTag(modelId)
       : canonicalModelTag(modelId.slice("ollama:".length));
     controller.signal.throwIfAborted();
-    const conversation = db.beginTurn(conversationId, messageId, prompt, tag);
+    const conversation = revision
+      ? db.reviseTurn(conversationId, messageId, revision, prompt, tag)
+      : db.beginTurn(conversationId, messageId, prompt, tag);
     assistantId = `${messageId}:assistant`;
     const memoryCommand = explicitMemoryContent(prompt);
     if (memoryCommand !== null) {
@@ -99,23 +119,35 @@ export async function handleConversationChat(
     let memories = recalled?.memories ?? [];
     try {
       if (!recalled || !db.memories.unchanged(recalled.revision)) memories = [];
-      if (memories.length) db.memories.markUsed(assistantId);
     } catch {
       memories = [];
     }
-    const messages = buildChatContext(conversation, documents, memories);
-    const upstream = await handleOllamaChat(
-      new Request(request.url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          modelId,
-          messages,
-        }),
-      }),
+    const intent = searchIntent(
+      prompt,
+      conversation.messages.filter((m) => m.id !== (revision?.userMessageId ?? messageId)),
     );
-    if (!upstream.ok || !upstream.body) {
+    const getUpstream = (web?: WebSearch) => {
+      controller.signal.throwIfAborted();
+      // Recheck after asynchronous work: disabling/clearing memory remains effective.
+      try {
+        if (recalled && !db!.memories.unchanged(recalled.revision)) memories = [];
+        if (memories.length) db!.memories.markUsed(assistantId!);
+      } catch {
+        memories = [];
+      }
+      const messages = buildChatContext(conversation, documents, memories, web);
+      return handleOllamaChat(
+        new Request(request.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({ modelId, messages }),
+        }),
+      );
+    };
+    // Ordinary chat retains its existing HTTP errors; searching starts a status stream.
+    const upstream = intent.needed ? undefined : await getUpstream();
+    if (upstream && (!upstream.ok || !upstream.body)) {
       save("error");
       request.signal.removeEventListener("abort", abort);
       return upstream;
@@ -125,7 +157,37 @@ export async function handleConversationChat(
     const stream = new ReadableStream<Uint8Array>({
       async start(out) {
         try {
-          for await (const event of readChatStream(upstream.body!, controller.signal)) {
+          let response = upstream;
+          if (!response) {
+            const emit = (webSearch: WebSearch) => {
+              if (!closed && !controller.signal.aborted)
+                out.enqueue(encoder.encode(JSON.stringify({ webSearch }) + "\n"));
+            };
+            let enabled = false;
+            try {
+              enabled = db!.internet.enabled();
+            } catch {
+              /* Fail closed. */
+            }
+            if (enabled) await requireLocalModel(tag, controller.signal);
+            let web = await runWebSearch(() => db!.internet, intent, controller.signal, emit);
+            controller.signal.throwIfAborted();
+            if (web) {
+              if (web.status === "complete" && !db!.internet.enabled()) web = disabledSearch();
+              db!.internet.save(assistantId!, web);
+              emit(web);
+            }
+            response = await getUpstream(web);
+          }
+          if (!response.ok || !response.body) {
+            const failure = await response.json().catch(() => null);
+            throw new Error(
+              typeof failure?.error === "string"
+                ? failure.error
+                : "The local model could not generate a reply.",
+            );
+          }
+          for await (const event of readChatStream(response.body, controller.signal)) {
             if (closed) break;
             content += event.text;
             // Commit before exposing tokens, especially the final done event.

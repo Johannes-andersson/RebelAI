@@ -1,3 +1,7 @@
+import { AssistantMessage } from "@/components/assistant-message";
+import { CopyButton } from "@/components/copy-button";
+import { webAnswerText } from "@/lib/web-search";
+import { WebSources } from "@/components/web-sources";
 import { useDocuments } from "@/hooks/use-documents";
 import { ConversationDocuments, MessageSources } from "@/components/conversation-documents";
 import { createFileRoute } from "@tanstack/react-router";
@@ -46,13 +50,38 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
   const fileInput = useRef<HTMLInputElement>(null);
   const { messages, streaming, error } = chat;
   const [input, setInput] = useState("");
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const [confirmEdit, setConfirmEdit] = useState(false);
+  const following = useRef(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (following.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
-  function send() {
-    if (!input.trim() || !model || chat.loading || chat.modelLoading || chat.pending || chat.saving)
+  function resend() {
+    if (!editing || !editing.text.trim() || chat.pending) return;
+    const index = messages.findIndex((m) => m.id === editing.id);
+    if (messages.slice(index + 1).some((m) => m.role === "user") && !confirmEdit) {
+      setConfirmEdit(true);
       return;
+    }
+    following.current = true;
+    void chat.revise(editing.id, "edit", editing.text, () => {
+      setEditing(null);
+      setConfirmEdit(false);
+    });
+  }
+  function send() {
+    if (
+      editing ||
+      !input.trim() ||
+      !model ||
+      chat.loading ||
+      chat.modelLoading ||
+      chat.pending ||
+      chat.saving
+    )
+      return;
+    following.current = true;
     void chat.send(input);
     setInput("");
   }
@@ -91,7 +120,14 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
         </select>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto"
+        onScroll={() => {
+          const el = scrollRef.current;
+          if (el) following.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+        }}
+      >
         {chat.loading ? (
           <p role="status" className="px-8 py-10 text-muted-foreground">
             Loading conversation…
@@ -113,34 +149,116 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
           </div>
         ) : (
           <div className="mx-auto max-w-3xl space-y-8 px-8 py-10">
-            {messages.map((m) =>
+            {messages.map((m, index) =>
               m.role === "user" ? (
-                <div key={m.id} className="flex justify-end animate-in fade-in">
-                  <p className="max-w-[80%] rounded-2xl rounded-br-md bg-panel-raised px-4 py-2.5">
-                    {m.content}
-                  </p>
+                <div key={m.id} className="group flex flex-col items-end gap-1 animate-in fade-in">
+                  {editing?.id === m.id ? (
+                    <div className="w-full rounded-lg border border-border bg-panel p-3">
+                      <textarea
+                        aria-label="Edit message"
+                        autoFocus
+                        className="min-h-28 w-full resize-y bg-transparent p-2 outline-none"
+                        value={editing.text}
+                        disabled={chat.pending}
+                        onChange={(e) => setEditing({ ...editing, text: e.target.value })}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            setEditing(null);
+                            setConfirmEdit(false);
+                          }
+                        }}
+                      />
+                      {confirmEdit && (
+                        <p role="alert" className="mb-2 text-sm text-muted-foreground">
+                          Resending this message will permanently remove all later messages and
+                          replace its reply.
+                        </p>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          className="btn-primary"
+                          disabled={!editing.text.trim() || chat.pending}
+                          onClick={resend}
+                        >
+                          {confirmEdit ? "Replace later messages" : "Resend"}
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          disabled={chat.pending}
+                          onClick={() => {
+                            setEditing(null);
+                            setConfirmEdit(false);
+                          }}
+                        >
+                          Cancel edit
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="max-w-[90%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-panel-raised px-4 py-2.5">
+                        {m.content}
+                      </p>
+                      <button
+                        className="link-quiet rounded px-2 py-1 text-xs opacity-70 hover:opacity-100 focus-visible:opacity-100"
+                        disabled={chat.pending || chat.modelLoading || chat.saving || !model}
+                        onClick={() => {
+                          setEditing({ id: m.id, text: m.content });
+                          setConfirmEdit(false);
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div key={m.id} className="flex gap-4 animate-in fade-in">
                   <span className="mt-1 h-6 w-6 shrink-0 rounded-md bg-primary-soft" />
                   <div className="min-w-0 flex-1">
-                    <p
-                      className={`whitespace-pre-wrap leading-relaxed text-foreground/90 ${streaming === m.id ? "caret" : ""}`}
-                    >
-                      {m.content || (
-                        <span className="text-subtle">
-                          {m.status === "pending" ? "Thinking…" : "No reply was completed."}
-                        </span>
-                      )}
-                      {m.status !== "complete" && m.id !== streaming && (
-                        <span className="mt-2 block text-xs text-subtle">
-                          {m.status === "pending"
-                            ? "Generation in progress…"
-                            : "Incomplete reply — excluded from future context."}
-                        </span>
-                      )}
-                    </p>
+                    {m.content ? (
+                      <AssistantMessage content={m.content} search={m.webSearch} />
+                    ) : (
+                      <p className="text-subtle">
+                        {m.status === "pending" ? "Thinking…" : "No reply was completed."}
+                      </p>
+                    )}
+                    {m.status !== "complete" && m.id !== streaming && (
+                      <p className="mt-2 text-xs text-subtle">
+                        {m.status === "pending"
+                          ? "Generation in progress…"
+                          : "Incomplete reply — excluded from future context."}
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <CopyButton
+                        label="Copy Response"
+                        text={webAnswerText(m.content, m.webSearch)}
+                      />
+                      {index === messages.length - 1 &&
+                        messages[index - 1]?.role === "user" &&
+                        m.status !== "pending" && (
+                          <button
+                            className="link-quiet rounded px-2 py-1 focus-visible:outline"
+                            disabled={
+                              chat.pending ||
+                              chat.modelLoading ||
+                              chat.saving ||
+                              !model ||
+                              !!editing
+                            }
+                            onClick={() => {
+                              const user = messages[index - 1]!;
+                              following.current = true;
+                              void chat.revise(user.id, "regenerate", user.content);
+                            }}
+                          >
+                            {m.status === "complete" ? "Regenerate" : "Retry reply"}
+                          </button>
+                        )}
+                    </div>
                     <MessageSources sources={m.sources} />
+                    <WebSources search={m.webSearch} />
                     {m.memoryUsed && m.content && (
                       <p className="mt-2 text-xs text-muted-foreground">Memory used</p>
                     )}
@@ -196,6 +314,7 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
           className="panel flex flex-col gap-2 p-3 focus-within:border-border-strong"
         >
           <textarea
+            disabled={!!editing}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -245,6 +364,7 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
                 <button
                   type="submit"
                   disabled={
+                    !!editing ||
                     !input.trim() ||
                     chat.pending ||
                     chat.loading ||

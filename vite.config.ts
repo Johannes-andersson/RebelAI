@@ -19,8 +19,14 @@ const config = defineConfig({
 
 export default (env: ConfigEnv) => {
   // Read only server-side runtime and local-storage settings; don't expose them as VITE_* variables.
-  const ollamaEnv = loadEnv(env.mode, process.cwd(), ["OLLAMA_", "REBEL_AI_"]);
-  for (const [key, value] of Object.entries(ollamaEnv)) {
+  const serverEnv = loadEnv(env.mode, process.cwd(), [
+    "OLLAMA_",
+    "REBEL_AI_",
+    "WEB_SEARCH_",
+    "BRAVE_SEARCH_",
+    "SEARXNG_",
+  ]);
+  for (const [key, value] of Object.entries(serverEnv)) {
     process.env[key] ??= value;
   }
   return config(env);

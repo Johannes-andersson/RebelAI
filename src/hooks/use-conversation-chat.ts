@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { conversations, conversationKeys } from "@/lib/conversations";
-import { chatRuntime } from "@/lib/runtime";
+import { chatRuntime, type ChatRequest } from "@/lib/runtime";
 import { appStore, applyModelInventory, useAppState } from "@/lib/store";
 import { modelManager } from "@/lib/model-manager";
 import type { StoredMessage } from "@/lib/types";
@@ -98,7 +98,7 @@ export function useConversationChat(id: string | undefined) {
     }
   }, [detail.data, inventoryReady, inventoryAvailable, state.installedModels]);
 
-  async function send(text: string) {
+  async function send(text: string, revision?: ChatRequest["revision"], onAccepted?: () => void) {
     const content = text.trim();
     const selected = appStore.get().activeModelId;
     if (
@@ -119,19 +119,49 @@ export function useConversationChat(id: string | undefined) {
     const messageId = crypto.randomUUID();
     const assistantId = `${messageId}:assistant`;
     const common = { conversationId: id, createdAt: new Date().toISOString() };
-    setMessages((m) => [
-      ...m,
-      { ...common, id: messageId, role: "user", content, status: "complete" },
-      { ...common, id: assistantId, role: "assistant", content: "", status: "pending" },
-    ]);
+    let accepted = false;
+    const accept = () => {
+      if (accepted || request.current !== controller || controller.signal.aborted) return;
+      accepted = true;
+      onAccepted?.();
+      setMessages((items) => {
+        const index = revision ? items.findIndex((m) => m.id === revision.userMessageId) : -1;
+        const before = revision
+          ? items
+              .slice(0, index + 1)
+              .map((m) => (m.id === revision.userMessageId ? { ...m, content } : m))
+          : [
+              ...items,
+              {
+                ...common,
+                id: messageId,
+                role: "user" as const,
+                content,
+                status: "complete" as const,
+              },
+            ];
+        return [
+          ...before,
+          { ...common, id: assistantId, role: "assistant", content: "", status: "pending" },
+        ];
+      });
+    };
+    if (!revision) accept();
     setStreaming(assistantId);
     setError(null);
     let firstToken = true;
     try {
       await chatRuntime.streamReply(
-        { conversationId: id, messageId, modelId: selected, content },
+        {
+          conversationId: id,
+          messageId,
+          modelId: selected,
+          content,
+          ...(revision ? { revision } : {}),
+        },
         (chunk) => {
           if (request.current !== controller || controller.signal.aborted) return;
+          accept();
           if (firstToken) {
             firstToken = false;
             void client.invalidateQueries({ queryKey: conversationKeys.list });
@@ -145,6 +175,16 @@ export function useConversationChat(id: string | undefined) {
           );
         },
         controller.signal,
+        (webSearch) => {
+          accept();
+          if (request.current !== controller || controller.signal.aborted) return;
+          setMessages((items) =>
+            items.map((message) =>
+              message.id === assistantId ? { ...message, webSearch } : message,
+            ),
+          );
+        },
+        accept,
       );
     } catch (cause) {
       if (request.current === controller && !controller.signal.aborted)
@@ -189,7 +229,17 @@ export function useConversationChat(id: string | undefined) {
     saving,
     send,
     selectModel,
-    pending: messages.some((m) => m.status === "pending"),
+    revise: (
+      userMessageId: string,
+      kind: "regenerate" | "edit",
+      text: string,
+      onAccepted?: () => void,
+    ) => {
+      const expectedTailId = messages.at(-1)?.id;
+      if (!expectedTailId) return;
+      return send(text, { kind, userMessageId, expectedTailId }, onAccepted);
+    },
+    pending: !!streaming || messages.some((m) => m.status === "pending"),
     stop: () => request.current?.abort(),
     reload: () => {
       setError(null);

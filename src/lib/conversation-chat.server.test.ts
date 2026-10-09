@@ -40,6 +40,7 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
   vi.resetAllMocks();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("durable streamed conversations", () => {
@@ -253,4 +254,250 @@ it("does not save an explicit instruction while memory is disabled", async () =>
   ).toContain("turned off");
   expect(db.memories.list()).toEqual([]);
   expect(handleOllamaChat).not.toHaveBeenCalled();
+});
+
+const webFixture = {
+  title: "Latest release",
+  url: "https://example.org/release",
+  description: "Version 2 released today.",
+};
+function setupSearch() {
+  db.internet.setEnabled(true);
+  vi.stubEnv("WEB_SEARCH_PROVIDER", "brave");
+  vi.stubEnv("BRAVE_SEARCH_API_KEY", "test-only-key");
+  const search = vi.fn().mockResolvedValue(Response.json({ web: { results: [webFixture] } }));
+  vi.stubGlobal("fetch", search);
+  vi.mocked(handleOllamaChat).mockResolvedValue(
+    new Response('{"message":{"content":"Version 2 [1]"},"done":true}\n'),
+  );
+  return search;
+}
+it("searches fresh questions, streams status, includes untrusted results, and persists sources with one reply", async () => {
+  const search = setupSearch();
+  const result = await handleConversationChat(
+    request(randomUUID(), "What is the latest version of React?"),
+    db,
+  );
+  const text = await result.text();
+  expect(text).toContain("Searching the web");
+  expect(text).toContain('"done":true');
+  expect(search).toHaveBeenCalledOnce();
+  const body = await vi.mocked(handleOllamaChat).mock.calls[0]![0].json();
+  expect(body.messages[0].content).toContain("UNTRUSTED");
+  expect(body.messages[1].role).toBe("user");
+  expect(body.messages[1].content).toContain(webFixture.url);
+  expect(body.messages.at(-1).content).toBe("What is the latest version of React?");
+  expect(JSON.stringify(body)).not.toContain("test-only-key");
+  expect(db.get(id).messages).toHaveLength(2);
+  expect(db.get(id).messages[1]).toMatchObject({
+    content: "Version 2 [1]",
+    status: "complete",
+    webSearch: { status: "complete", sources: [{ url: webFixture.url }] },
+  });
+});
+it("ignores client permission flags and does not search when the persisted permission is off", async () => {
+  const search = setupSearch();
+  db.internet.setEnabled(false);
+  const base = request(randomUUID(), "Latest AI news");
+  const data = await base.json();
+  const forged = new Request(base.url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...data, internetEnabled: true }),
+  });
+  await (await handleConversationChat(forged, db)).text();
+  expect(search).not.toHaveBeenCalled();
+  const body = await vi.mocked(handleOllamaChat).mock.calls[0]![0].json();
+  expect(body.messages[0].content).toContain("Internet access is off");
+  expect(db.get(id).messages[1]?.webSearch).toMatchObject({ status: "disabled", sources: [] });
+});
+it("does not search ordinary local questions even when permission is enabled", async () => {
+  const search = setupSearch();
+  await (
+    await handleConversationChat(request(randomUUID(), "Explain Python functions."), db)
+  ).text();
+  expect(search).not.toHaveBeenCalled();
+  expect(db.get(id).messages[1]?.webSearch).toBeUndefined();
+});
+it("continues locally with a persisted honest notice and no citations when search fails", async () => {
+  const search = setupSearch();
+  search.mockRejectedValueOnce(new Error("Network offline"));
+  await (await handleConversationChat(request(randomUUID(), "Latest AI news"), db)).text();
+  expect(db.get(id).messages[1]).toMatchObject({
+    status: "complete",
+    webSearch: { status: "unavailable", sources: [] },
+  });
+  const body = await vi.mocked(handleOllamaChat).mock.calls[0]![0].json();
+  expect(body.messages[0].content).toContain(
+    "rather than presenting old knowledge as verified current",
+  );
+  expect(JSON.stringify(body)).not.toContain(webFixture.url);
+});
+it("revoking permission during search aborts the provider, discards results, and continues local chat", async () => {
+  const search = setupSearch();
+  let providerSignal: AbortSignal | undefined;
+  search.mockImplementationOnce(
+    (_url, options) =>
+      new Promise((_resolve, reject) => {
+        providerSignal = options.signal;
+        providerSignal!.addEventListener("abort", () => reject(new Error("cancelled")), {
+          once: true,
+        });
+      }),
+  );
+  const response = await handleConversationChat(request(randomUUID(), "Latest AI news"), db);
+  await vi.waitFor(() => expect(providerSignal).toBeDefined());
+  db.internet.setEnabled(false);
+  expect(await response.text()).toContain("Internet access is off");
+  expect(providerSignal!.aborted).toBe(true);
+  expect(db.get(id).messages[1]).toMatchObject({
+    status: "complete",
+    webSearch: { status: "disabled", sources: [] },
+  });
+});
+it("cancelling the status stream during a search leaves an interrupted reply and no invented sources", async () => {
+  const search = setupSearch();
+  search.mockImplementationOnce(
+    (_url, options) =>
+      new Promise((_resolve, reject) =>
+        options.signal.addEventListener("abort", () => reject(new Error("cancelled")), {
+          once: true,
+        }),
+      ),
+  );
+  const response = await handleConversationChat(request(randomUUID(), "Latest AI news"), db);
+  const reader = response.body!.getReader();
+  await reader.read();
+  await reader.cancel();
+  expect(db.get(id).messages[1]).toMatchObject({ status: "interrupted", content: "" });
+  expect(db.get(id).messages[1]?.webSearch).toBeUndefined();
+  expect(handleOllamaChat).not.toHaveBeenCalled();
+});
+it("keeps web source references scoped to their conversation", async () => {
+  setupSearch();
+  const first = id;
+  await (await handleConversationChat(request(randomUUID(), "Latest AI news"), db)).text();
+  id = randomUUID();
+  db.create(id, null);
+  vi.mocked(handleOllamaChat).mockResolvedValue(
+    new Response('{"message":{"content":"Hello"},"done":true}\n'),
+  );
+  await (await handleConversationChat(request(), db)).text();
+  const body = await vi.mocked(handleOllamaChat).mock.calls[1]![0].json();
+  expect(JSON.stringify(body)).not.toContain(webFixture.url);
+  expect(db.get(id).messages[1]?.webSearch).toBeUndefined();
+  expect(db.get(first).messages[1]?.webSearch?.sources).toHaveLength(1);
+});
+it("does not send a search query or inference to an unverified remote runtime", async () => {
+  const search = setupSearch();
+  vi.mocked(requireLocalModel).mockRejectedValueOnce(new Error("Choose a local model"));
+  expect(
+    await (await handleConversationChat(request(randomUUID(), "Latest AI news"), db)).text(),
+  ).toContain("Choose a local model");
+  expect(search).not.toHaveBeenCalled();
+  expect(handleOllamaChat).not.toHaveBeenCalled();
+  expect(db.get(id).messages[1]?.status).toBe("error");
+});
+
+async function revisionRequest(
+  kind: "regenerate" | "edit",
+  userMessageId: string,
+  content = "Edited question",
+) {
+  return new Request("http://localhost/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conversationId: id,
+      messageId: randomUUID(),
+      modelId: "qwen-7b",
+      content,
+      revision: { kind, userMessageId, expectedTailId: db.get(id).messages.at(-1)!.id },
+    }),
+  });
+}
+it("regeneration uses the saved prompt, refreshes Brave citations once, and replaces only the assistant", async () => {
+  const user = randomUUID();
+  const search = setupSearch();
+  await (await handleConversationChat(request(user, "Latest React version?"), db)).text();
+  search.mockClear();
+  search.mockResolvedValue(
+    Response.json({ web: { results: [{ ...webFixture, url: "https://example.org/new" }] } }),
+  );
+  await (
+    await handleConversationChat(
+      await revisionRequest("regenerate", user, "Do not use this client prompt"),
+      db,
+    )
+  ).text();
+  expect(search).toHaveBeenCalledOnce();
+  const history = db.get(id);
+  expect(history.messages).toHaveLength(2);
+  expect(history.messages[0]?.content).toBe("Latest React version?");
+  expect(history.messages[1]?.id).not.toBe(`${user}:assistant`);
+  expect(history.messages[1]?.webSearch?.sources[0]).toMatchObject({
+    id: "S1",
+    url: "https://example.org/new",
+  });
+  const upstream = await vi.mocked(handleOllamaChat).mock.calls.at(-1)![0].json();
+  expect(
+    upstream.messages.filter(
+      (m: { role: string; content: string }) => m.content === "Latest React version?",
+    ),
+  ).toHaveLength(1);
+});
+it("editing removes outdated downstream context and respects current internet OFF", async () => {
+  const user = randomUUID();
+  const search = setupSearch();
+  await (await handleConversationChat(request(user, "Latest React version?"), db)).text();
+  await (await handleConversationChat(request(randomUUID(), "Explain functions"), db)).text();
+  db.internet.setEnabled(false);
+  search.mockClear();
+  await (
+    await handleConversationChat(await revisionRequest("edit", user, "Latest Python version?"), db)
+  ).text();
+  expect(search).not.toHaveBeenCalled();
+  const history = db.get(id);
+  expect(history.messages).toHaveLength(2);
+  expect(history.messages[0]?.content).toBe("Latest Python version?");
+  expect(history.messages[1]?.webSearch?.status).toBe("disabled");
+  const upstream = await vi.mocked(handleOllamaChat).mock.calls.at(-1)![0].json();
+  expect(JSON.stringify(upstream.messages)).not.toContain("Explain functions");
+});
+it("failed regeneration leaves one retryable error reply without duplicating the user", async () => {
+  const user = randomUUID();
+  setupSearch();
+  await (await handleConversationChat(request(user, "Explain functions"), db)).text();
+  vi.mocked(handleOllamaChat).mockResolvedValue(
+    Response.json({ error: "Ollama stopped" }, { status: 503 }),
+  );
+  const result = await handleConversationChat(await revisionRequest("regenerate", user), db);
+  expect(result.status).toBe(503);
+  expect(db.get(id).messages).toHaveLength(2);
+  expect(db.get(id).messages[1]?.status).toBe("error");
+});
+it("cancelled regeneration saves partial text as interrupted", async () => {
+  const user = randomUUID();
+  setupSearch();
+  await (await handleConversationChat(request(user, "Explain functions"), db)).text();
+  let out!: ReadableStreamDefaultController<Uint8Array>;
+  vi.mocked(handleOllamaChat).mockResolvedValue(
+    new Response(
+      new ReadableStream({
+        start(c) {
+          out = c;
+        },
+      }),
+    ),
+  );
+  const response = await handleConversationChat(await revisionRequest("regenerate", user), db);
+  const reader = response.body!.getReader();
+  out.enqueue(encoder.encode('{"message":{"content":"Partial replacement"}}\n'));
+  await reader.read();
+  await reader.cancel();
+  expect(db.get(id).messages).toHaveLength(2);
+  expect(db.get(id).messages[1]).toMatchObject({
+    content: "Partial replacement",
+    status: "interrupted",
+  });
 });

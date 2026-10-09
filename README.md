@@ -15,12 +15,12 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 ## Development
 
-Prefer working locally? You need Node.js 22.13 or newer and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Prefer working locally? You need Node.js 22.13 or newer and Bun 1.4.2. Bun is the dependency installer; Node runs the app and tests because the server uses `node:sqlite`. Keep `bun.lock` as the single dependency lockfile and use a frozen install to reproduce its versions.
 
 ```sh
 git clone <this-repository-url>
 cd <repository-name>
-npm i
+bun install --frozen-lockfile
 npm run dev
 ```
 
@@ -383,3 +383,102 @@ for that answer, not proof of how the model used it. This historical indicator
 remains on old replies after memory is disabled or cleared. No summarization,
 automatic extraction, profiling, categories, cloud sync, or autonomous editing
 is implemented.
+
+## Optional automatic web search
+
+Internet access defaults **OFF**. Enable **Settings → Privacy → Allow internet
+access** to let Rebel AI look up current information. The setting now lives in
+`app_settings` in the existing `conversations.sqlite`, not component state or
+localStorage. It persists across navigation, reloads, and app restarts. React
+Query provides a central browser API/cache; server rendering uses an OFF/loading
+state and hydrates from the local server. Other preferences are not overwritten.
+
+The server checks the stored permission itself. A client flag cannot enable
+search. Turning access OFF cancels active searches in this server process and
+prevents new ones; OFF is rechecked before accepting results. A provider may
+already have received a dispatched query, which cannot be recalled. Results
+already supplied to an ongoing model response cannot be removed retroactively.
+Run one Rebel AI server per data directory, as with conversation persistence.
+
+### Search provider setup
+
+The default adapter is **Brave Search**, using its documented JSON API instead
+of scraping result pages. Configure these **server-only** values in `.env`
+and restart the development server:
+
+```dotenv
+WEB_SEARCH_PROVIDER=brave
+BRAVE_SEARCH_API_KEY=your-key
+```
+
+Create a key for the Web Search API through the
+[Brave dashboard](https://api-dashboard.search.brave.com/documentation/quickstart).
+Provider pricing, credits, and rate limits depend on your plan. The key is sent
+only in the provider authorization header, never to the browser or Ollama.
+For a production Node launch, supply these as environment variables through your
+launcher, or launch from the project directory with
+`node --env-file=.env .output/server/index.mjs`. The development server reads `.env`
+automatically. Restart after changing it. Never use a `VITE_` prefix for credentials.
+The local `.env` file is ignored by Git; `.env.example` contains no credentials.
+
+For a self-hosted option without a paid search API subscription:
+
+```dotenv
+WEB_SEARCH_PROVIDER=searxng
+SEARXNG_BASE_URL=http://127.0.0.1:8888
+```
+
+Use your own SearXNG instance with `json` enabled under `search.formats` in its
+`settings.yml`. Rebel AI calls `/search?q=...&format=json&categories=general`.
+HTTPS is required unless the instance is on loopback. Many public instances
+disable JSON or impose limits; no random public instance is selected for you.
+See the [SearXNG Search API](https://docs.searxng.org/dev/search_api.html).
+Running SearXNG is optional and is not bundled into Rebel AI. If neither provider
+is configured, a clear setup notice appears and the answer remains local.
+
+### Decision, context, and privacy
+
+A small deterministic decision module recognizes freshness terms, weather,
+news, prices, current officeholders, and explicit web lookups. Ordinary code,
+creative writing, and conversation summaries stay local. Short follow-ups can
+use a bounded topic from the immediately preceding user turn in the **same**
+conversation. No extra model call is made for classification. Ambiguous requests
+fall back to local knowledge; say “Search the web for…” to request a lookup.
+These English-language heuristics are intentionally limited and may miss
+unusual phrasing or misunderstand a follow-up; there is no autonomous browsing.
+
+Only a compact query (at most 360 characters) is sent to the chosen provider.
+Basic secret fields, email addresses, URL parameters, and extra pasted lines are
+removed. This is not a comprehensive sensitive-data detector: information you
+include in a search question may still reach the provider. Do not put secrets in
+search requests. Full transcripts, saved memories, and attached file contents
+are never used as outbound search payloads. External providers receive queries
+and network metadata; conversation storage and Ollama inference stay local.
+Search-enabled turns verify that the selected Ollama runtime/model is local.
+
+Each lookup has a 12-second timeout, a 512 KB response limit, and at most five
+validated HTTP(S) sources. There are no automatic retries, page crawls, or
+provider redirects. Titles and snippets are bounded and rendered as plain text.
+Search results enter temporary context as explicitly **untrusted data**, separate
+from application instructions, memories, and document context. The model is told
+to ignore instructions in snippets and cite the supplied result numbers. This
+reduces prompt-injection risk but cannot guarantee a local model will obey every
+instruction or interpret evidence correctly.
+
+“Searching the web…” travels over the existing NDJSON chat stream without being
+saved as answer text. After lookup, compact source links and a search date appear
+under the answer. These links come only from actual validated provider results;
+model-generated URLs are not converted into source links. Snippets are search
+summaries, not independently verified full pages or a weather/finance data feed.
+Source metadata and failure notices are stored in `message_web_search`, attached
+to the existing assistant message and removed when its conversation is deleted.
+Raw search results are never inserted into user messages. A source badge means
+results were supplied, not a guarantee that every generated claim is supported.
+
+Permission denial, missing credentials, timeouts, rate limits, offline failures,
+and empty results show explicit notices with no fake citations. Local replies
+are instructed not to present unverified information as current. Switching
+conversations or pressing Stop aborts the search/model request and retains the
+existing interrupted-message behavior. A search failure does not duplicate or
+replace conversation history. No cloud LLM, account, telemetry, or new database
+is introduced.

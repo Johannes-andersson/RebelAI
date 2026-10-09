@@ -1,3 +1,4 @@
+import { webSearchSchema } from "./web-search";
 import { sourceSchema } from "./document-config";
 import { z } from "zod";
 import type { Conversation, ConversationSummary } from "./types";
@@ -17,6 +18,7 @@ const conversationSchema = summarySchema.extend({
       content: z.string(),
       createdAt: z.string(),
       status: z.enum(["pending", "complete", "interrupted", "error"]),
+      webSearch: webSearchSchema.optional(),
       memoryUsed: z.boolean().optional(),
       sources: sourceSchema.array().optional(),
     }),
@@ -59,6 +61,11 @@ export const conversations = {
   async update(id: string, modelTag: string | null): Promise<Conversation> {
     return conversationSchema.parse(
       await request(`/${encodeURIComponent(id)}`, "PATCH", { modelTag }),
+    );
+  },
+  async rename(id: string, title: string): Promise<Conversation> {
+    return conversationSchema.parse(
+      await request(`/${encodeURIComponent(id)}`, "PATCH", { title }),
     );
   },
   async delete(id: string): Promise<void> {

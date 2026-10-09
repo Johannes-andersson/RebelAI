@@ -52,9 +52,15 @@ export async function handleConversations(
       if (!body.success) throw new ConversationError("Invalid new conversation.", 400);
       result = db.create(body.data.id, body.data.modelTag ?? null);
     } else if (request.method === "PATCH" && id) {
-      const body = z.object({ modelTag }).safeParse(await request.json().catch(() => null));
+      const body = z
+        .union([
+          z.object({ title: z.string().trim().min(1).max(100) }).strict(),
+          z.object({ modelTag }).strict(),
+        ])
+        .safeParse(await request.json().catch(() => null));
       if (!body.success) throw new ConversationError("Invalid conversation update.", 400);
-      result = db.update(id, body.data.modelTag);
+      result =
+        "title" in body.data ? db.rename(id, body.data.title) : db.update(id, body.data.modelTag);
     } else if (request.method === "DELETE" && id) {
       db.delete(id);
       return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });

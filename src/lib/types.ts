@@ -43,6 +43,7 @@ export interface ChatMessage {
 }
 
 export interface StoredMessage extends ChatMessage {
+  webSearch?: import("./web-search").WebSearch | undefined;
   memoryUsed?: boolean | undefined;
   sources?: import("./document-config").DocumentSource[] | undefined;
   conversationId: string;

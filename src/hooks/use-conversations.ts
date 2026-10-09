@@ -28,5 +28,12 @@ export function useConversations() {
       void client.invalidateQueries({ queryKey: conversationKeys.list });
     },
   });
-  return { recent, create, remove };
+  const rename = useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) => conversations.rename(id, title),
+    onSuccess: (conversation) => {
+      client.setQueryData(conversationKeys.detail(conversation.id), conversation);
+      void client.invalidateQueries({ queryKey: conversationKeys.list });
+    },
+  });
+  return { recent, create, remove, rename };
 }

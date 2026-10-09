@@ -1,3 +1,4 @@
+import { webSearchSchema } from "./web-search";
 // Shared decoding for the local chat stream. Neither screen knows Ollama's wire format.
 export async function* readChatStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal) {
   const reader = body.getReader();
@@ -31,11 +32,16 @@ export async function* readChatStream(body: ReadableStream<Uint8Array>, signal?:
         if (!event || typeof event !== "object")
           throw new Error("Invalid streaming response. Please try again.");
         if (typeof event.error === "string") throw new Error(event.error);
+        const search = webSearchSchema.safeParse(event.webSearch);
         const text = typeof event.message?.content === "string" ? event.message.content : "";
         hasText ||= !!text;
         if (event.done === true && !hasText)
           throw new Error("Ollama returned no reply. Please try again.");
-        yield { text, done: event.done === true };
+        yield {
+          text,
+          done: event.done === true,
+          webSearch: search.success ? search.data : undefined,
+        };
         if (event.done === true) return;
       }
       if (done) throw new Error("The response was interrupted. Please try again.");

@@ -1,3 +1,4 @@
+import { InternetRepository } from "./internet.server";
 import { MemoryRepository } from "./memories.server";
 import { DocumentRepository } from "./documents.server";
 import { cancelDocumentJob } from "./document-processing.server";
@@ -30,6 +31,17 @@ export function conversationDirectory() {
 export class ConversationRepository {
   private db: DatabaseSync;
   readonly documents: DocumentRepository;
+  private internetRepository?: InternetRepository;
+  get internet() {
+    return (this.internetRepository ??= new InternetRepository(this.db));
+  }
+  private webSearch(id: string) {
+    try {
+      return this.internet.get(id);
+    } catch {
+      return undefined;
+    }
+  }
   private memoryRepository?: MemoryRepository;
   get memories() {
     return (this.memoryRepository ??= new MemoryRepository(this.db));
@@ -57,6 +69,14 @@ export class ConversationRepository {
       CREATE INDEX IF NOT EXISTS message_conversation ON messages(conversationId);
       CREATE UNIQUE INDEX IF NOT EXISTS one_generation_per_conversation ON messages(conversationId) WHERE status='pending';
       UPDATE messages SET status='interrupted' WHERE status='pending';`);
+    if (
+      !this.db
+        .prepare("PRAGMA table_info(conversations)")
+        .all()
+        .some((column) => column["name"] === "customTitle")
+    ) {
+      this.db.exec("ALTER TABLE conversations ADD COLUMN customTitle INTEGER NOT NULL DEFAULT 0");
+    }
     this.documents = new DocumentRepository(this.db, dirname(path));
   }
   close() {
@@ -92,6 +112,7 @@ export class ConversationRepository {
         ...m,
         sources: this.documents.sources(m.id),
         memoryUsed: this.memoryUsed(m.id),
+        webSearch: this.webSearch(m.id),
       })),
     };
   }
@@ -99,12 +120,15 @@ export class ConversationRepository {
     const now = new Date().toISOString();
     // A stable client ID makes retrying a lost creation response safe.
     this.db
-      .prepare("INSERT OR IGNORE INTO conversations VALUES (?, 'New chat', ?, ?, ?)")
+      .prepare(
+        "INSERT OR IGNORE INTO conversations (id,title,createdAt,updatedAt,modelTag) VALUES (?, 'New chat', ?, ?, ?)",
+      )
       .run(id, now, now, modelTag);
     return this.get(id);
   }
   update(id: string, modelTag: string | null): Conversation {
-    this.get(id);
+    if (this.get(id).messages.some((m) => m.status === "pending"))
+      throw new ConversationError("Stop the current reply before changing models.", 409);
     this.db
       .prepare("UPDATE conversations SET modelTag=?, updatedAt=? WHERE id=?")
       .run(modelTag, new Date().toISOString(), id);
@@ -137,13 +161,81 @@ export class ConversationRepository {
       this.db
         .prepare("UPDATE conversations SET title=?, modelTag=?, updatedAt=? WHERE id=?")
         .run(
-          conversation.messages.some((m) => m.role === "user")
+          this.hasCustomTitle(id) || conversation.messages.some((m) => m.role === "user")
             ? conversation.title
             : conversationTitle(content),
           modelTag,
           now,
           id,
         );
+      return this.get(id);
+    });
+  }
+  private hasCustomTitle(id: string) {
+    return Boolean(
+      this.db.prepare("SELECT customTitle FROM conversations WHERE id=?").get(id)?.["customTitle"],
+    );
+  }
+  rename(id: string, title: string): Conversation {
+    const value = title.trim();
+    if (!value || value.length > 100)
+      throw new ConversationError("Use a title between 1 and 100 characters.", 400);
+    this.get(id);
+    this.db
+      .prepare("UPDATE conversations SET title=?, customTitle=1, updatedAt=? WHERE id=?")
+      .run(value, new Date().toISOString(), id);
+    return this.get(id);
+  }
+  reviseTurn(
+    id: string,
+    requestId: string,
+    revision: { kind: "regenerate" | "edit"; userMessageId: string; expectedTailId: string },
+    content: string,
+    modelTag: string,
+  ): Conversation {
+    return this.transaction(() => {
+      const conversation = this.get(id);
+      if (conversation.messages.some((m) => m.status === "pending"))
+        throw new ConversationError(
+          "A reply is already being generated in this conversation.",
+          409,
+        );
+      const tail = conversation.messages.at(-1);
+      if (tail?.id !== revision.expectedTailId)
+        throw new ConversationError("History changed. Reload before replacing messages.", 409);
+      const targetIndex = conversation.messages.findIndex(
+        (m) => m.id === revision.userMessageId && m.role === "user",
+      );
+      const target = conversation.messages[targetIndex];
+      if (!target) throw new ConversationError("The original message no longer exists.", 409);
+      if (
+        revision.kind === "regenerate" &&
+        (targetIndex !== conversation.messages.length - 2 || tail?.role !== "assistant")
+      )
+        throw new ConversationError("Only the latest reply can be regenerated.", 409);
+      if (conversation.modelTag !== modelTag)
+        throw new ConversationError("The selected model changed. Reload before trying again.", 409);
+      if (!content.trim() || content.length > 200000)
+        throw new ConversationError("Enter a message of at most 200000 characters.", 400);
+      if (this.db.prepare("SELECT id FROM messages WHERE id=?").get(`${requestId}:assistant`))
+        throw new ConversationError("This replacement was already saved. Reload history.", 409);
+      // Cascades remove stale web/document citations and memory-use metadata.
+      this.db
+        .prepare(
+          "DELETE FROM messages WHERE conversationId=? AND rowid>(SELECT rowid FROM messages WHERE id=?)",
+        )
+        .run(id, target.id);
+      if (revision.kind === "edit")
+        this.db.prepare("UPDATE messages SET content=? WHERE id=?").run(content.trim(), target.id);
+      const now = new Date().toISOString();
+      this.db
+        .prepare("INSERT INTO messages VALUES (?, ?, 'assistant', '', ?, 'pending')")
+        .run(`${requestId}:assistant`, id, now);
+      if (revision.kind === "edit" && targetIndex === 0 && !this.hasCustomTitle(id))
+        this.db
+          .prepare("UPDATE conversations SET title=? WHERE id=?")
+          .run(conversationTitle(content), id);
+      this.db.prepare("UPDATE conversations SET updatedAt=? WHERE id=?").run(now, id);
       return this.get(id);
     });
   }
@@ -170,8 +262,8 @@ export class ConversationRepository {
 // opens it again and recovers unfinished replies. Run one server per data folder.
 const local = globalThis as typeof globalThis & { rebelConversations?: ConversationRepository };
 export function getConversations() {
-  // Upgrade a development server that already held the pre-memory repository.
-  if (local.rebelConversations && !Reflect.has(local.rebelConversations, "memories")) {
+  // Upgrade a development server that already held the pre-internet repository.
+  if (local.rebelConversations && !Reflect.has(local.rebelConversations, "reviseTurn")) {
     local.rebelConversations.close();
     delete local.rebelConversations;
   }

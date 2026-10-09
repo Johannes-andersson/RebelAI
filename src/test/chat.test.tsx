@@ -257,3 +257,188 @@ it("preserves error feedback when generation fails and allows another message", 
   });
   expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
 });
+
+it("shows search status and retains real source links on the saved assistant reply", async () => {
+  const search = {
+    status: "complete" as const,
+    notice: "Web sources",
+    sources: [{ title: "Official source", url: "https://example.org/news", snippet: "News" }],
+  };
+  let finish!: () => void;
+  vi.mocked(chatRuntime.streamReply).mockImplementationOnce(
+    async (request, onToken, _signal, onSearch) => {
+      onSearch?.({ status: "searching", notice: "Searching the web…", sources: [] });
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      onSearch?.(search);
+      onToken("News [1]");
+      records.get(request.conversationId)!.messages.push(
+        {
+          id: request.messageId,
+          conversationId: request.conversationId,
+          createdAt: "now",
+          role: "user",
+          content: request.content,
+          status: "complete",
+        },
+        {
+          id: `${request.messageId}:assistant`,
+          conversationId: request.conversationId,
+          createdAt: "now",
+          role: "assistant",
+          content: "News [1]",
+          status: "complete",
+          webSearch: search,
+        },
+      );
+    },
+  );
+  view();
+  await ready();
+  send("Latest AI news");
+  expect(await screen.findByText("Searching the web…")).toBeInTheDocument();
+  await act(async () => finish());
+  expect(await screen.findByRole("link", { name: "[S1] Official source" })).toHaveAttribute(
+    "href",
+    "https://example.org/news",
+  );
+  expect(screen.getByText("News [S1]")).toBeInTheDocument();
+});
+
+function seedTurns() {
+  const c = records.get("one")!;
+  for (const [user, text] of [
+    ["u1", "First question"],
+    ["u2", "Second question"],
+  ]) {
+    const fields = { conversationId: c.id, createdAt: "now", status: "complete" as const };
+    c.messages.push(
+      { ...fields, id: user!, role: "user", content: text! },
+      { ...fields, id: `${user}:assistant`, role: "assistant", content: `Reply to ${text}` },
+    );
+  }
+  return c;
+}
+function mockRevision() {
+  vi.mocked(chatRuntime.streamReply).mockImplementation(
+    async (request, onToken, _signal, _onSearch, onAccepted) => {
+      const c = records.get(request.conversationId)!;
+      const revision = request.revision!;
+      const index = c.messages.findIndex((m) => m.id === revision.userMessageId);
+      c.messages = c.messages.slice(0, index + 1);
+      c.messages[index]!.content = request.content;
+      onAccepted?.();
+      onToken("Replacement reply");
+      c.messages.push({
+        id: `${request.messageId}:assistant`,
+        conversationId: c.id,
+        role: "assistant",
+        content: "Replacement reply",
+        status: "complete",
+        createdAt: "now",
+      });
+    },
+  );
+}
+it("only regenerates the latest assistant and uses the saved selected model", async () => {
+  seedTurns();
+  mockRevision();
+  view();
+  await ready();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Regenerate" })).not.toBeDisabled(),
+  );
+  expect(screen.getAllByRole("button", { name: "Regenerate" })).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Regenerate" }));
+  expect(await screen.findByText("Replacement reply")).toBeInTheDocument();
+  expect(chatRuntime.streamReply).toHaveBeenCalledWith(
+    expect.objectContaining({
+      modelId: qwen.id,
+      revision: { kind: "regenerate", userMessageId: "u2", expectedTailId: "u2:assistant" },
+    }),
+    expect.any(Function),
+    expect.any(AbortSignal),
+    expect.any(Function),
+    expect.any(Function),
+  );
+  expect(records.get("one")!.messages).toHaveLength(4);
+});
+it("cancels an edit without saving and confirms before replacing earlier history", async () => {
+  const c = seedTurns();
+  mockRevision();
+  const v = view();
+  await ready();
+  await waitFor(() =>
+    expect(screen.getAllByRole("button", { name: "Edit" })[0]).not.toBeDisabled(),
+  );
+  fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]!);
+  fireEvent.change(screen.getByRole("textbox", { name: "Edit message" }), {
+    target: { value: "Discarded" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel edit" }));
+  expect(chatRuntime.streamReply).not.toHaveBeenCalled();
+  expect(c.messages[0]?.content).toBe("First question");
+  fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]!);
+  fireEvent.change(screen.getByRole("textbox", { name: "Edit message" }), {
+    target: { value: "Edited first" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Resend" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("permanently remove all later messages");
+  expect(chatRuntime.streamReply).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Replace later messages" }));
+  expect(await screen.findByText("Replacement reply")).toBeInTheDocument();
+  expect(c.messages).toHaveLength(2);
+  expect(screen.queryByText("Second question")).not.toBeInTheDocument();
+  v.unmount();
+  view();
+  await ready();
+  expect(await screen.findByText("Edited first")).toBeInTheDocument();
+});
+it("edits the latest user without a downstream confirmation and retains drafts on failed requests", async () => {
+  const c = seedTurns();
+  mockRevision();
+  view();
+  await ready();
+  await waitFor(() =>
+    expect(screen.getAllByRole("button", { name: "Edit" })[1]).not.toBeDisabled(),
+  );
+  fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[1]!);
+  fireEvent.change(screen.getByRole("textbox", { name: "Edit message" }), {
+    target: { value: "Edited last" },
+  });
+  vi.mocked(chatRuntime.streamReply).mockRejectedValueOnce(new Error("Server unavailable"));
+  fireEvent.click(screen.getByRole("button", { name: "Resend" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Server unavailable");
+  expect(screen.getByRole("textbox", { name: "Edit message" })).toHaveValue("Edited last");
+  expect(c.messages).toHaveLength(4);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Resend" })).not.toBeDisabled());
+  fireEvent.click(screen.getByRole("button", { name: "Resend" }));
+  expect(await screen.findByText("Replacement reply")).toBeInTheDocument();
+  expect(c.messages[2]?.content).toBe("Edited last");
+});
+it("does not force scroll while the reader has scrolled up", async () => {
+  let token!: (text: string) => void;
+  let finish!: () => void;
+  vi.mocked(chatRuntime.streamReply).mockImplementation((_r, onToken) => {
+    token = onToken;
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  const v = view();
+  await ready();
+  send("Hello");
+  const scroll = v.container.querySelector(".overflow-y-auto") as HTMLElement;
+  Object.defineProperties(scroll, {
+    scrollHeight: { configurable: true, value: 2000 },
+    clientHeight: { configurable: true, value: 300 },
+    scrollTop: { configurable: true, value: 100 },
+  });
+  fireEvent.scroll(scroll);
+  const scrollTo = vi.spyOn(scroll, "scrollTo");
+  scrollTo.mockClear();
+  await act(async () => token("Readable tokens"));
+  expect(scrollTo).not.toHaveBeenCalled();
+  await act(async () => finish());
+});

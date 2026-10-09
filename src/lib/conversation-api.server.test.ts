@@ -51,3 +51,12 @@ it("does not expose database details in storage errors", async () => {
   expect((await result.json()).error).toContain("data-folder permissions");
   db = new ConversationRepository(":memory:");
 });
+it("renames through PATCH and rejects empty, long and ambiguous updates", async () => {
+  const id = randomUUID();
+  db.create(id, null);
+  const response = await handleConversations(request("PATCH", { title: "My project" }), id, db);
+  expect((await response.json()).title).toBe("My project");
+  for (const body of [{ title: " " }, { title: "x".repeat(101) }, { title: "Hi", modelTag: null }])
+    expect((await handleConversations(request("PATCH", body), id, db)).status).toBe(400);
+  expect(db.get(id).title).toBe("My project");
+});

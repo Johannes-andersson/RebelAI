@@ -111,3 +111,18 @@ describe("chat runtime", () => {
     expect(onToken).not.toHaveBeenCalled();
   });
 });
+
+it("delivers validated search status separately from reply tokens", async () => {
+  const webSearch = { status: "searching", notice: "Searching the web…", sources: [] };
+  mockReply(
+    JSON.stringify({ webSearch }) +
+      "\n" +
+      JSON.stringify({ message: { content: "Answer" }, done: true }) +
+      "\n",
+  );
+  const status = vi.fn(),
+    tokens = vi.fn();
+  await chatRuntime.streamReply(request, tokens, undefined, status);
+  expect(status).toHaveBeenCalledWith(webSearch);
+  expect(tokens).toHaveBeenCalledExactlyOnceWith("Answer");
+});

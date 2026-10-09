@@ -25,7 +25,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("@/lib/conversations", async (original) => ({
   ...(await original<typeof import("@/lib/conversations")>()),
-  conversations: { list: vi.fn(), create: vi.fn(), delete: vi.fn() },
+  conversations: { list: vi.fn(), create: vi.fn(), delete: vi.fn(), rename: vi.fn() },
 }));
 const item: ConversationSummary = {
   id: "one",
@@ -99,4 +99,21 @@ it("keeps local storage failures visible", async () => {
   vi.mocked(conversations.list).mockRejectedValue(new Error("Local storage unavailable"));
   setup();
   expect(await screen.findByRole("alert")).toHaveTextContent("Local storage unavailable");
+});
+
+it("renames and immediately refreshes the sidebar only after saving", async () => {
+  vi.mocked(conversations.rename).mockImplementation(async (id, title) => {
+    items = items.map((c) => (c.id === id ? { ...c, title } : c));
+    return { ...items[0]!, messages: [] };
+  });
+  setup();
+  fireEvent.click(
+    await screen.findByRole("button", { name: `Rename conversation: ${item.title}` }),
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Conversation title" }), {
+    target: { value: "Renamed locally" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save title" }));
+  expect(await screen.findByRole("link", { name: "Renamed locally" })).toBeInTheDocument();
+  expect(conversations.rename).toHaveBeenCalledWith("one", "Renamed locally");
 });

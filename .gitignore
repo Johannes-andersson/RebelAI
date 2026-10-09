@@ -34,3 +34,17 @@ dist-ssr
 # Local conversation databases (never commit private history)
 *.sqlite
 *.sqlite-*
+
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Local databases and file uploads (including custom in-repo data folders)
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+attachments/
+.rebel-ai/
+rebel-ai-data/

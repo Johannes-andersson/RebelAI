@@ -17,6 +17,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ApiChatRouteImport } from './routes/api.chat'
 import { Route as ApiConversationsRouteImport } from './routes/api.conversations'
 import { Route as ApiDocumentSearchRouteImport } from './routes/api.document-search'
+import { Route as ApiInternetRouteImport } from './routes/api.internet'
 import { Route as ApiMemoriesRouteImport } from './routes/api.memories'
 import { Route as ApiModelsRouteImport } from './routes/api.models'
 import { Route as ApiSystemRouteImport } from './routes/api.system'
@@ -64,6 +65,11 @@ const ApiConversationsRoute = ApiConversationsRouteImport.update({
 const ApiDocumentSearchRoute = ApiDocumentSearchRouteImport.update({
   id: '/api/document-search',
   path: '/api/document-search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInternetRoute = ApiInternetRouteImport.update({
+  id: '/api/internet',
+  path: '/api/internet',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiMemoriesRoute = ApiMemoriesRouteImport.update({
@@ -118,6 +124,7 @@ export interface FileRoutesByFullPath {
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/document-search': typeof ApiDocumentSearchRoute
+  '/api/internet': typeof ApiInternetRoute
   '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/models': typeof ApiModelsRouteWithChildren
   '/api/system': typeof ApiSystemRoute
@@ -136,6 +143,7 @@ export interface FileRoutesByTo {
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/document-search': typeof ApiDocumentSearchRoute
+  '/api/internet': typeof ApiInternetRoute
   '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/models': typeof ApiModelsRouteWithChildren
   '/api/system': typeof ApiSystemRoute
@@ -155,6 +163,7 @@ export interface FileRoutesById {
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
   '/api/document-search': typeof ApiDocumentSearchRoute
+  '/api/internet': typeof ApiInternetRoute
   '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/models': typeof ApiModelsRouteWithChildren
   '/api/system': typeof ApiSystemRoute
@@ -175,6 +184,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/conversations'
     | '/api/document-search'
+    | '/api/internet'
     | '/api/memories'
     | '/api/models'
     | '/api/system'
@@ -193,6 +203,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/conversations'
     | '/api/document-search'
+    | '/api/internet'
     | '/api/memories'
     | '/api/models'
     | '/api/system'
@@ -211,6 +222,7 @@ export interface FileRouteTypes {
     | '/api/chat'
     | '/api/conversations'
     | '/api/document-search'
+    | '/api/internet'
     | '/api/memories'
     | '/api/models'
     | '/api/system'
@@ -230,6 +242,7 @@ export interface RootRouteChildren {
   ApiChatRoute: typeof ApiChatRoute
   ApiConversationsRoute: typeof ApiConversationsRouteWithChildren
   ApiDocumentSearchRoute: typeof ApiDocumentSearchRoute
+  ApiInternetRoute: typeof ApiInternetRoute
   ApiMemoriesRoute: typeof ApiMemoriesRouteWithChildren
   ApiModelsRoute: typeof ApiModelsRouteWithChildren
   ApiSystemRoute: typeof ApiSystemRoute
@@ -291,6 +304,13 @@ declare module '@tanstack/react-router' {
       path: '/api/document-search'
       fullPath: '/api/document-search'
       preLoaderRoute: typeof ApiDocumentSearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internet': {
+      id: '/api/internet'
+      path: '/api/internet'
+      fullPath: '/api/internet'
+      preLoaderRoute: typeof ApiInternetRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/memories': {
@@ -423,6 +443,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiChatRoute: ApiChatRoute,
   ApiConversationsRoute: ApiConversationsRouteWithChildren,
   ApiDocumentSearchRoute: ApiDocumentSearchRoute,
+  ApiInternetRoute: ApiInternetRoute,
   ApiMemoriesRoute: ApiMemoriesRouteWithChildren,
   ApiModelsRoute: ApiModelsRouteWithChildren,
   ApiSystemRoute: ApiSystemRoute,
