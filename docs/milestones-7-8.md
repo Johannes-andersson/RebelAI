@@ -197,3 +197,60 @@ Storage uses `node:path.join` and UUID filenames, so user display filenames neve
 ### Git and release status
 
 At completion of the verification pass, all milestone and cleanup work was uncommitted and unstaged on `main`. Existing changes were preserved. Dependency manifests/lockfiles are unchanged; local environment files, SQLite databases, attachments, logs, and build output remain ignored. That verification pass performed no commit, push, history rewrite, model download, or personal-data modification. The subsequent authorized Git checkpoint includes only source, tests, and documentation; temporary fixtures and local artifacts are excluded. The remaining blocked UI/vision checks prevent a claim of full runtime verification.
+
+## Live vision and Chrome acceptance follow-up — October 14, 2026
+
+This section supersedes the earlier missing-vision-model status. It does not turn user-reported browser results into independently automated evidence.
+
+### Installed capability inspection
+
+Inspected through the local Ollama 0.34.0 API on an Apple M2 Mac with 16 GiB unified memory:
+
+| Exact installed tag | Reported capabilities |
+| --- | --- |
+| `gemma2:9b` | `completion` |
+| `embeddinggemma:300m` | `embedding` |
+| `qwen2.5:7b` | `completion`, `tools` |
+| `x/flux2-klein:4b` | `image` |
+| `llama3.1:8b` | `completion`, `tools` |
+| `gemma3:4b` (installed after explicit approval in this pass) | `completion`, `vision` |
+
+The installed Klein model is **FLUX.2 Klein**, not FLUX.1. Its [Ollama model card](https://ollama.com/x/flux2-klein) advertises image generation and image editing. Its local metadata reports neither `vision` nor conversational `completion`, so it is not a supported visual question-answering model for Rebel AI. Generation/editing were not exercised as part of the image-understanding check; advertised editing capability is not a claim of a live editing test.
+
+With explicit user approval, `gemma3:4b` was pulled through local Ollama. The [official tag](https://ollama.com/library/gemma3:4b) listed an approximately 3.4 GB download and multimodal support. The planning estimate was 5–8 GB working memory for short image conversations, not a measured guarantee. During this run, Ollama `/api/ps` reported about 2.89 GB for the loaded model with an 8192-token context; this is Ollama's model-allocation metric, not total process/system memory. Existing model configuration was not edited.
+
+### Results and evidence boundaries
+
+| Acceptance check | Result | Evidence |
+| --- | --- | --- |
+| Live local image understanding | **PASS for functional image input; imperfect answer accuracy** | Real Chrome request, manually selected PNG, local Gemma response |
+| Follow-up with the stored image | **PASS for attachment reuse; color answer incorrect** | Image explicitly reselected; same stored image referenced on the next user turn |
+| Text-only warning | **PASS** | Real Qwen request rejected with “No image was analyzed”; pending files and text retained |
+| Image plus document coordination | **PASS** | Chrome selected both files, local image activity plus one retrieved document, correct `[D1]` answer |
+| Multi-file Chrome selection/upload | **PASS with manual evidence** | User manually selected PNG, JPEG, and TXT; all three pending entries visible; PNG subsequently sent successfully. Full batch completion in the other window was user-reported, not inspected |
+| Folder picker / repeat folder import | **PASS — user-reported manual result** | User reported the requested checklist worked in another window; no personal files in that window were inspected |
+| Finder drag-and-drop / cancellation | **PASS — user-reported manual result** | Same manual checklist report; no automated Finder drag gesture was performed |
+| Reload and full restart persistence | **PASS** | Chrome history plus exact isolated API snapshots and original PNG bytes |
+| Windows | **REVIEWED ONLY** | No Windows runtime test in this pass |
+
+Chrome automation still cannot select files because the ChatGPT extension's **Allow access to file URLs** permission is disabled. The supported chooser method was attempted and blocked. No permission was changed. The user's initial “works” response was clarified: those manual checks were performed in another Rebel AI window. The isolated test database was still empty, so no claim is made that those imports were independently observed there. The user then manually attached the synthetic files in the isolated chat, which was directly observed. Automated/API results are not used as proof of picker, folder selection, or Finder drag-and-drop success.
+
+### Vision test details
+
+The synthetic PNG contained a red square on the left, blue circle in the center, green triangle on the right, and black `TEST42` lettering on white. Before sending, the JPEG copy and the answer-revealing reference document were removed from the pending message. The first question was exactly: “Describe exactly what you see in this image.” The filename was generic, and the isolated conversation contained no prior answers or document excerpts.
+
+Gemma correctly identified all three shapes, their colors/positions, and `TEST42`. It incorrectly described the lettering as white on black. A follow-up explicitly reselected the same stored PNG and asked about the letters/background; the model repeated that error. The original PNG served by the app was byte-identical to the fixture, so no app-side color inversion was found. **This demonstrates genuine image input and useful visual recognition, not fully accurate visual interpretation.** OCR, small details, colors, and prior-answer anchoring still require review.
+
+For the separate coordination test, the synthetic reference text was added via the local API solely to prepare the document context; that preparation is not counted as a browser upload test. Both files were then selected in Chrome. Rebel AI reported one locally analyzed image and one retrieved document, and correctly answered: “According to [D1], the blue circle represents the review stage.” Expanding the citation showed the actual excerpt, and clicking the link opened the corresponding local text in Chrome. A direct automation navigation initially reported a client block; the actual in-app link opened correctly and its text was inspected.
+
+Image input is scoped to the current turn: reselect a stored image for visual follow-ups. All three user turns retained the same image reference after refresh and a full production-server restart. Exact before/after snapshots matched messages, attachments, file metadata, source references, and tool activity. The PNG bytes matched the original. Local inference used Ollama on loopback and the isolated internet permission remained off. No image/document content was intentionally sent to an external inference or search service; model-download traffic was separately authorized.
+
+### Validation, defects, and status
+
+- Full suite rerun: **400 passed, 0 failed**, 48 test files.
+- TypeScript: PASS. ESLint with zero-warning enforcement: PASS. Production build: PASS. Git whitespace: PASS.
+- No application defect requiring a code change was confirmed. The visual color mistake is a model-accuracy limitation and was not hidden by modifying prompts or retrying until a favorable answer appeared.
+- Prior verified rename/reindex, source cleanup, path safety, and isolated database migration tests remain passing. Detailed folder contents, per-file failures, duplicate counts, and cancellation behavior in the user's other window were not independently inspected during this follow-up.
+- Only `docs/milestones-7-8.md` changed in this pass. No dependencies, application behavior, existing model settings, or personal data changed. The approved Gemma download remains installed in Ollama.
+- Base checkpoint: `2f926ab44e53aad8d101129193f952c3b9d7b96d` on `main`; this documentation update is uncommitted. No new commit or push was performed.
+- Remaining limits: imperfect vision accuracy; browser folder/drag acceptance rests on user-reported manual evidence while automation permission remains blocked; Windows runtime remains unverified. Live Brave was not retested.
