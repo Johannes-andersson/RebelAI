@@ -73,3 +73,14 @@ it("keeps streaming incomplete fences readable and validates web references with
   expect(view.container.querySelector("pre")?.textContent).toBe("arr[0] = 1;");
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
+
+it("does not display invented document source references or model-generated source links", () => {
+  render(
+    <AssistantMessage
+      content="Fact [D1]. Invented [D99]. [fake](https://invented.example)"
+      documentCount={1}
+    />,
+  );
+  expect(screen.getByText(/unavailable document source/)).toBeInTheDocument();
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+});

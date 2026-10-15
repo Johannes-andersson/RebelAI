@@ -1,3 +1,9 @@
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
 import { StatusDot, Wordmark } from "@/components/brand";
@@ -9,7 +15,6 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogCancel,
-  AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import { useAppState } from "@/lib/store";
 
@@ -28,20 +33,24 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
   const history = useConversations();
   const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState<{ id: string; title: string } | null>(null);
+  const [showEmpty, setShowEmpty] = useState(false);
+  const entries = history.recent.data?.filter((c) => (showEmpty ? c.isEmpty : !c.isEmpty));
   async function newChat() {
     onNewChat?.();
     try {
-      const c = await history.create.mutateAsync();
-      await navigate({ to: "/chat", search: { conversation: c.id } });
+      await navigate({ to: "/chat", search: {} });
     } catch {
       /* The sidebar displays the mutation error. */
     }
   }
   async function removeConversation(id: string) {
-    if (search.conversation === id) onNewChat?.();
     try {
       await history.remove.mutateAsync(id);
-      if (search.conversation === id) await navigate({ to: "/chat", search: {} });
+      setDeleting(null);
+      if (search.conversation === id) {
+        onNewChat?.();
+        await navigate({ to: "/chat", search: {} });
+      }
     } catch {
       /* Keep the existing history visible and show the error. */
     }
@@ -56,7 +65,6 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
           onClick={() => {
             void newChat();
           }}
-          disabled={history.create.isPending}
           className="btn-secondary mt-6 h-9 justify-start"
         >
           <span className="text-primary">+</span> New Chat
@@ -103,11 +111,16 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
             </button>
           </div>
         )}
+        {history.recent.data?.some((c) => c.isEmpty) && (
+          <button className="link-quiet px-3 py-1 text-xs" onClick={() => setShowEmpty(!showEmpty)}>
+            {showEmpty ? "Show recent conversations" : "Review empty conversations"}
+          </button>
+        )}
         <ul className="mt-2 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
-          {history.recent.data?.length === 0 && (
+          {entries?.length === 0 && (
             <li className="px-3 py-2 text-xs text-subtle">No conversations yet.</li>
           )}
-          {history.recent.data?.map((c) => (
+          {entries?.map((c) => (
             <li key={c.id} className="flex items-center gap-1">
               <Link
                 to="/chat"
@@ -117,24 +130,34 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
               >
                 {c.title}
               </Link>
-              <button
-                aria-label={`Rename conversation: ${c.title}`}
-                className="rounded px-1 py-1 text-xs text-subtle hover:text-foreground"
-                onClick={() => {
-                  history.rename.reset();
-                  setRenaming({ id: c.id, title: c.title });
-                }}
-              >
-                Rename
-              </button>
-              <button
-                aria-label={`Delete conversation: ${c.title}`}
-                disabled={history.remove.isPending}
-                onClick={() => setDeleting(c)}
-                className="rounded px-2 py-1 text-subtle hover:text-foreground"
-              >
-                ×
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    aria-label={`Conversation options: ${c.title}`}
+                    className="rounded px-2 py-1 text-subtle hover:bg-accent focus-visible:outline"
+                  >
+                    ⋯
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      history.rename.reset();
+                      setRenaming({ id: c.id, title: c.title });
+                    }}
+                  >
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      history.remove.reset();
+                      setDeleting(c);
+                    }}
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </li>
           ))}
         </ul>
@@ -197,24 +220,32 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
       <AlertDialog
         open={!!deleting}
         onOpenChange={(open) => {
-          if (!open) setDeleting(null);
+          if (!open && !history.remove.isPending) setDeleting(null);
         }}
       >
         <AlertDialogContent>
           <AlertDialogTitle>Delete conversation?</AlertDialogTitle>
           <AlertDialogDescription>
             Delete “{deleting?.title}” and all its messages from local history? This cannot be
-            undone.
+            undone. Files attached only to this conversation will also be removed. Saved calendar
+            events are kept.
           </AlertDialogDescription>
+          {history.remove.error && (
+            <p role="alert" className="text-destructive">
+              {history.remove.error.message}
+            </p>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            <AlertDialogCancel disabled={history.remove.isPending}>Cancel</AlertDialogCancel>
+            <button
+              className="btn-primary"
+              disabled={history.remove.isPending}
               onClick={() => {
                 if (deleting) void removeConversation(deleting.id);
               }}
             >
               Delete conversation
-            </AlertDialogAction>
+            </button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

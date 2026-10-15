@@ -65,3 +65,16 @@ export function calendarCandidate(text: string) {
     )
   );
 }
+
+// Only user-authored requests reach this gate. Evidence never authorizes a draft.
+export function explicitCalendarRequest(text: string) {
+  if (
+    /\b(?:do not|don't|never)\b|^(?:explain|how|what|if|imagine|write|translate|summarize)\b/i.test(
+      text.trim(),
+    )
+  )
+    return false;
+  return /\b(?:add|create|prepare|schedule|put|book|arrange)\b[\s\S]{0,160}\b(?:calendar|event|meeting|appointment|reminder)\b|\bremind me\b/i.test(
+    text,
+  );
+}

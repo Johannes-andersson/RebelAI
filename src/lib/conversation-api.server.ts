@@ -62,7 +62,7 @@ export async function handleConversations(
       result =
         "title" in body.data ? db.rename(id, body.data.title) : db.update(id, body.data.modelTag);
     } else if (request.method === "DELETE" && id) {
-      db.delete(id);
+      db.delete(id, new URL(request.url).searchParams.get("empty") === "true");
       return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
     } else throw new ConversationError("Method not allowed.", 405);
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });

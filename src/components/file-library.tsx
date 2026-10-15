@@ -1,3 +1,5 @@
+import { FileMetadataEditor } from "./file-metadata-editor";
+import { FileBatchImport } from "./file-batch-import";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,6 +34,7 @@ function UploadPanel({ id }: { id: string }) {
           }}
         />
       </label>
+      <FileBatchImport conversationId={id} />
       <ConversationDocuments documents={docs} />
       <Link className="link-quiet" to="/chat" search={{ conversation: id }}>
         Open conversation to ask about these files
@@ -49,19 +52,20 @@ export function FileLibrary() {
     refetchInterval: 2000,
   });
   const [selected, setSelected] = useState("");
+  const [filter, setFilter] = useState("");
   const [error, setError] = useState<string | null>(null);
   const exists = history.recent.data?.some((c) => c.id === selected);
   return (
     <div className="flex-1 overflow-y-auto p-10 space-y-6">
       <p className="text-sm text-muted-foreground">
-        PDF, TXT, and Markdown · Up to 10 MB per file and 20 files per conversation. Files and
-        document search stay on this computer. Scanned PDFs need selectable text; OCR and folder
-        import are not supported.
+        PDF, TXT, Markdown, JPEG, PNG, and WebP · Up to 10 MB per file and 100 files per
+        conversation. Files and search stay on this computer. Scanned PDFs need selectable text.
+        Images require a local vision model; text recognition is not guaranteed.
       </p>
       <p className="text-sm text-muted-foreground">
-        Choose a conversation for uploads. Files are searched only inside that conversation.
-        Removing a file also removes its saved excerpts; deleting its conversation removes its
-        files.
+        Choose a conversation for uploads. Chat searches that conversation by default; select files
+        or a folder in Chat to search across conversations. Removing a file also removes its saved
+        excerpts; deleting its conversation removes its files.
       </p>
       <div className="flex items-end gap-3">
         <label className="flex-1 text-sm">
@@ -119,39 +123,55 @@ export function FileLibrary() {
             No files uploaded yet. Choose or create a conversation above to add your first document.
           </p>
         )}
-        {library.data?.map((file) => (
-          <article key={file.id} className="rounded-xl border border-border bg-panel p-4">
-            <h3 className="font-medium break-all">{file.filename}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {file.type.toUpperCase()} · {(file.size / 1024).toFixed(1)} KB ·{" "}
-              {new Date(file.createdAt).toLocaleDateString()} ·{" "}
-              {file.status === "preparing" ? "Preparing document search…" : file.status}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Conversation:{" "}
-              {history.recent.data?.find((c) => c.id === file.conversationId)?.title ?? "Loading…"}
-            </p>
-            {file.error && <p className="text-sm text-destructive">{file.error}</p>}
-            <div className="mt-3 flex gap-3">
-              <Link
-                className="link-quiet"
-                to="/chat"
-                search={{ conversation: file.conversationId }}
-              >
-                Chat with files
-              </Link>
-              <button
-                className="link-quiet"
-                onClick={() => {
-                  setSelected(file.conversationId);
-                  void client.invalidateQueries({ queryKey: ["documents", file.conversationId] });
-                }}
-              >
-                Manage / remove
-              </button>
-            </div>
-          </article>
-        ))}
+        <input
+          aria-label="Search local files"
+          className="w-full rounded border border-border bg-panel p-2"
+          placeholder="Filter by filename, folder, type, or status"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+        {library.data
+          ?.filter((f) =>
+            `${f.filename} ${f.relativePath ?? ""} ${f.type} ${f.status}`
+              .toLowerCase()
+              .includes(filter.toLowerCase()),
+          )
+          .map((file) => (
+            <article key={file.id} className="rounded-xl border border-border bg-panel p-4">
+              <h3 className="font-medium break-all">{file.filename}</h3>
+              {file.relativePath && <p className="text-xs text-subtle">{file.relativePath}</p>}
+              <FileMetadataEditor file={file} />
+              <p className="mt-1 text-sm text-muted-foreground">
+                {file.type.toUpperCase()} · {(file.size / 1024).toFixed(1)} KB ·{" "}
+                {new Date(file.createdAt).toLocaleDateString()} ·{" "}
+                {file.status === "preparing" ? "Preparing document search…" : file.status}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Conversation:{" "}
+                {history.recent.data?.find((c) => c.id === file.conversationId)?.title ??
+                  "Loading…"}
+              </p>
+              {file.error && <p className="text-sm text-destructive">{file.error}</p>}
+              <div className="mt-3 flex gap-3">
+                <Link
+                  className="link-quiet"
+                  to="/chat"
+                  search={{ conversation: file.conversationId }}
+                >
+                  Chat with files
+                </Link>
+                <button
+                  className="link-quiet"
+                  onClick={() => {
+                    setSelected(file.conversationId);
+                    void client.invalidateQueries({ queryKey: ["documents", file.conversationId] });
+                  }}
+                >
+                  Manage / remove
+                </button>
+              </div>
+            </article>
+          ))}
       </section>
     </div>
   );

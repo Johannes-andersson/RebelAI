@@ -13,7 +13,9 @@ vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof import("@tanstack/react-router")>()),
   useNavigate: () => navigate,
 }));
-vi.mock("@/lib/documents", () => ({ documents: { list: vi.fn(async () => []) } }));
+vi.mock("@/lib/documents", () => ({
+  documents: { list: vi.fn(async () => []), library: vi.fn(async () => []) },
+}));
 vi.mock("@/lib/model-manager", () => ({ modelManager: { list: vi.fn() } }));
 vi.mock("@/lib/runtime", () => ({ chatRuntime: { streamReply: vi.fn() } }));
 vi.mock("@/lib/conversations", async (original) => ({
@@ -89,6 +91,8 @@ beforeEach(() => {
     return c;
   });
   vi.mocked(chatRuntime.streamReply).mockImplementation(async (request, onToken) => {
+    if (request.newConversation && !records.has(request.conversationId))
+      records.set(request.conversationId, empty(request.conversationId));
     const c = records.get(request.conversationId)!;
     const fields = { conversationId: c.id, createdAt: "now", status: "complete" as const };
     c.messages.push({ ...fields, id: request.messageId, role: "user", content: request.content });
@@ -115,7 +119,9 @@ describe("persistent chat UI", () => {
     await ready();
     send("My name is Sam.");
     await screen.findByText("Hello Sam!");
-    await waitFor(() => expect(screen.getByRole("combobox")).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Conversation model" })).toBeEnabled(),
+    );
     send("What is my name?");
     await waitFor(() => expect(chatRuntime.streamReply).toHaveBeenCalledTimes(2));
     expect(vi.mocked(chatRuntime.streamReply).mock.calls[1]![0]).toMatchObject({
@@ -172,22 +178,35 @@ describe("persistent chat UI", () => {
     records.get("one")!.modelTag = llama.tag;
     view();
     await ready();
-    await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue(llama.id));
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: qwen.id } });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Conversation model" })).toHaveValue(llama.id),
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Conversation model" }), {
+      target: { value: qwen.id },
+    });
     await waitFor(() => expect(conversations.update).toHaveBeenCalledWith("one", qwen.tag));
     expect(records.get("one")!.modelTag).toBe(qwen.tag);
   });
-  it("creates an empty record when opening a new chat URL", async () => {
+  it("ten fresh mounts create no records; the first message creates exactly one", async () => {
     currentId = undefined;
+    for (let i = 0; i < 10; i++) {
+      const v = view();
+      await waitFor(() =>
+        expect(screen.getByRole("combobox", { name: "Conversation model" })).toBeEnabled(),
+      );
+      v.unmount();
+    }
+    expect(conversations.create).not.toHaveBeenCalled();
+    expect(records.size).toBe(2);
     view();
     await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({
-        to: "/chat",
-        search: { conversation: expect.any(String) },
-        replace: true,
-      }),
+      expect(screen.getByRole("combobox", { name: "Conversation model" })).toBeEnabled(),
     );
-    expect(conversations.create).toHaveBeenCalledTimes(1);
+    send("First meaningful message");
+    await screen.findByText("Hello Sam!");
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(records.size).toBe(3);
+    expect(chatRuntime.streamReply).toHaveBeenCalledTimes(1);
   });
   it("keeps an interrupted reply visibly incomplete", async () => {
     records.get("one")!.messages.push({
@@ -212,7 +231,7 @@ describe("persistent chat UI", () => {
       target: { value: "Hello" },
     });
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
-    expect(screen.getByRole("combobox")).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: "Conversation model" })).toBeEnabled();
   });
 });
 
@@ -232,17 +251,25 @@ it("opens saved history while Ollama is unavailable without calling the model mi
   expect(screen.getByRole("alert")).toHaveTextContent("Ollama is not responding");
   expect(screen.queryByText(/saved model .* is not installed/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Reload history" }));
-  await waitFor(() => expect(screen.getByRole("combobox")).toBeEnabled());
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Conversation model" })).toBeEnabled(),
+  );
 });
-it("retries failed conversation creation with the same ID", async () => {
+it("keeps a failed draft and retries with the same conversation identity", async () => {
   currentId = undefined;
-  vi.mocked(conversations.create).mockRejectedValueOnce(new Error("Local storage unavailable"));
+  vi.mocked(chatRuntime.streamReply).mockRejectedValueOnce(new Error("Local storage unavailable"));
   view();
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Conversation model" })).toBeEnabled(),
+  );
+  send("Keep this draft");
   await screen.findByText(/Local storage unavailable/);
-  fireEvent.click(screen.getByRole("button", { name: "Reload history" }));
-  await waitFor(() => expect(navigate).toHaveBeenCalled());
-  expect(vi.mocked(conversations.create).mock.calls[0]![0]).toBe(
-    vi.mocked(conversations.create).mock.calls[1]![0],
+  expect(screen.getByPlaceholderText("Message Rebel AI...")).toHaveValue("Keep this draft");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Hello Sam!");
+  expect(vi.mocked(chatRuntime.streamReply).mock.calls[0]![0].conversationId).toBe(
+    vi.mocked(chatRuntime.streamReply).mock.calls[1]![0].conversationId,
   );
 });
 it("preserves error feedback when generation fails and allows another message", async () => {
@@ -251,7 +278,9 @@ it("preserves error feedback when generation fails and allows another message", 
   await ready();
   send("Hello");
   expect(await screen.findByRole("alert")).toHaveTextContent("Ollama is unavailable");
-  await waitFor(() => expect(screen.getByRole("combobox")).toBeEnabled());
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Conversation model" })).toBeEnabled(),
+  );
   fireEvent.change(screen.getByPlaceholderText("Message Rebel AI..."), {
     target: { value: "Retry" },
   });
@@ -453,7 +482,7 @@ it("does not silently select a fallback when a model disappears during inventory
   await waitFor(() =>
     expect(screen.getByRole("alert")).toHaveTextContent("saved model qwen2.5:7b is not installed"),
   );
-  expect(screen.getByRole("combobox")).toHaveValue("");
+  expect(screen.getByRole("combobox", { name: "Conversation model" })).toHaveValue("");
   expect(records.get("one")?.modelTag).toBe(qwen.tag);
   expect(conversations.update).not.toHaveBeenCalled();
 });

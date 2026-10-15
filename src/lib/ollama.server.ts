@@ -1,3 +1,5 @@
+import { DocumentError } from "./document-config";
+import { requireVision } from "./image-input.server";
 import { prepareGeneration } from "./generation.server";
 import { automaticPreferences, type GenerationPreferences } from "./generation-config";
 import { embeddingModel } from "./embedding-config.server";
@@ -19,7 +21,11 @@ const chatRequest = z
       .refine((id) => isSupportedModel(id) || id.startsWith("ollama:")),
     messages: z
       .array(
-        z.object({ role: z.enum(["system", "user", "assistant"]), content: z.string().min(1) }),
+        z.object({
+          role: z.enum(["system", "user", "assistant"]),
+          content: z.string().min(1),
+          images: z.array(z.string().max(14_000_000)).max(4).optional(),
+        }),
       )
       .min(1),
   })
@@ -58,7 +64,10 @@ export async function handleOllamaChat(
   let model: string;
   try {
     model = await resolveChatModelTag(modelId, request.signal);
+    if (messages.some((m) => m.images?.length)) await requireVision(model, request.signal);
   } catch (error) {
+    if (error instanceof DocumentError)
+      return Response.json({ error: error.message }, { status: error.status });
     return modelErrorResponse(error);
   }
   let prepared;

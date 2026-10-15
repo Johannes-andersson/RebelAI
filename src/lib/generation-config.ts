@@ -81,6 +81,7 @@ export function effectiveOptions(
   });
 }
 export interface PromptMessage {
+  images?: string[] | undefined;
   role: string;
   content: string;
 }
@@ -93,7 +94,14 @@ export function fitPrompt(
   const history = messages.slice(prefixCount);
   const estimate = (items: PromptMessage[]) =>
     128 +
-    items.reduce((n, m) => n + Math.ceil(new TextEncoder().encode(m.content).length / 3) + 12, 0);
+    items.reduce(
+      (n, m) =>
+        n +
+        Math.ceil(new TextEncoder().encode(m.content).length / 3) +
+        12 +
+        (m.images?.length ?? 0) * 2048,
+      0,
+    );
   const budget = options.num_ctx - options.num_predict;
   let omittedMessages = 0;
   // Preserve the newest user turn and all application/source context. Drop whole old turns.

@@ -1,3 +1,4 @@
+import { ToolActivityRepository } from "./tool-activity.server";
 import { CalendarRepository } from "./calendar.server";
 import { GenerationRepository } from "./generation-settings.server";
 import type { GenerationPerformance } from "./generation-config";
@@ -34,6 +35,10 @@ export function conversationDirectory() {
 export class ConversationRepository {
   private db: DatabaseSync;
   readonly documents: DocumentRepository;
+  private activityRepository?: ToolActivityRepository;
+  get activity() {
+    return (this.activityRepository ??= new ToolActivityRepository(this.db));
+  }
   private calendarRepository?: CalendarRepository;
   get calendar() {
     return (this.calendarRepository ??= new CalendarRepository(this.db));
@@ -89,6 +94,7 @@ export class ConversationRepository {
       this.db.exec("ALTER TABLE conversations ADD COLUMN customTitle INTEGER NOT NULL DEFAULT 0");
     }
     this.documents = new DocumentRepository(this.db, dirname(path));
+    this.activityRepository = new ToolActivityRepository(this.db);
   }
   close() {
     this.db.close();
@@ -106,8 +112,17 @@ export class ConversationRepository {
   }
   list(): ConversationSummary[] {
     return this.db
-      .prepare("SELECT * FROM conversations ORDER BY updatedAt DESC, rowid DESC")
-      .all() as unknown as ConversationSummary[];
+      .prepare(
+        `SELECT conversations.*,
+        NOT EXISTS(SELECT 1 FROM messages WHERE conversationId=conversations.id)
+        AND NOT EXISTS(SELECT 1 FROM documents WHERE conversationId=conversations.id) AS isEmpty
+        FROM conversations ORDER BY updatedAt DESC, rowid DESC`,
+      )
+      .all()
+      .map((row) => ({
+        ...row,
+        isEmpty: Boolean(row["isEmpty"]),
+      })) as unknown as ConversationSummary[];
   }
   get(id: string): Conversation {
     const conversation = this.db
@@ -121,6 +136,8 @@ export class ConversationRepository {
       ...conversation,
       messages: messages.map((m) => ({
         ...m,
+        activity: this.activity.get(m.id),
+        attachments: this.documents.attachments(m.id),
         sources: this.documents.sources(m.id),
         memoryUsed: this.memoryUsed(m.id),
         webSearch: this.webSearch(m.id),
@@ -147,15 +164,28 @@ export class ConversationRepository {
       .run(modelTag, new Date().toISOString(), id);
     return this.get(id);
   }
-  delete(id: string) {
+  delete(id: string, onlyEmpty = false) {
+    if (onlyEmpty && !this.list().some((c) => c.id === id && c.isEmpty))
+      throw new ConversationError(
+        "This conversation is no longer empty. Reload before deleting it.",
+        409,
+      );
     for (const file of this.documents.list(id)) {
       cancelDocumentJob(file.id);
-      this.documents.delete(id, file.id);
+      if (!this.documents.preserveShared(id, file.id)) this.documents.delete(id, file.id);
     }
     this.db.prepare("DELETE FROM conversations WHERE id=?").run(id);
   }
-  beginTurn(id: string, messageId: string, content: string, modelTag: string): Conversation {
+  beginTurn(
+    id: string,
+    messageId: string,
+    content: string,
+    modelTag: string,
+    create = false,
+  ): Conversation {
     return this.transaction(() => {
+      if (!content.trim()) throw new ConversationError("Enter a message first.", 400);
+      if (create) this.create(id, modelTag);
       const conversation = this.get(id);
       if (conversation.messages.some((m) => m.status === "pending"))
         throw new ConversationError(

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { conversations, conversationKeys } from "@/lib/conversations";
+import type { ConversationSummary } from "@/lib/types";
 import { appStore } from "@/lib/store";
 export function useConversations() {
   const client = useQueryClient();
@@ -22,8 +23,16 @@ export function useConversations() {
     },
   });
   const remove = useMutation({
-    mutationFn: (id: string) => conversations.delete(id),
+    mutationFn: (id: string) => {
+      const item = client
+        .getQueryData<ConversationSummary[]>(conversationKeys.list)
+        ?.find((c) => c.id === id);
+      return conversations.delete(id, item?.isEmpty === true);
+    },
     onSuccess: (_, id) => {
+      client.setQueryData<ConversationSummary[]>(conversationKeys.list, (items) =>
+        items?.filter((item) => item.id !== id),
+      );
       client.removeQueries({ queryKey: conversationKeys.detail(id) });
       void client.invalidateQueries({ queryKey: conversationKeys.list });
     },

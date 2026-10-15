@@ -1,3 +1,8 @@
+import { documentAnswerText } from "@/lib/document-config";
+import type { StoredMessage } from "@/lib/types";
+import { AttachmentComposer } from "@/components/attachment-composer";
+import { FileScope } from "@/components/file-scope";
+import { encodeFile, fileUrl, isImage } from "@/lib/attachment-config";
 import { ChatCalendarAction } from "@/components/chat-calendar-action";
 import { GenerationPerformance } from "@/components/generation-performance";
 import { AssistantMessage } from "@/components/assistant-message";
@@ -38,12 +43,31 @@ const suggestions = [
   "Brainstorm an idea",
 ];
 
-function ChatPage() {
-  const { conversation } = Route.useSearch();
-  return <ChatSession key={conversation ?? "new"} conversationId={conversation} />;
+function documentCount(message: StoredMessage) {
+  return message.sources?.length || message.activity?.some((a) => a.tool === "documents")
+    ? (message.sources?.length ?? 0)
+    : undefined;
 }
 
-function ChatSession({ conversationId }: { conversationId: string | undefined }) {
+function ChatPage() {
+  const { conversation } = Route.useSearch();
+  const [draftVersion, setDraftVersion] = useState(0);
+  return (
+    <ChatSession
+      key={conversation ?? `new-${draftVersion}`}
+      conversationId={conversation}
+      resetDraft={() => setDraftVersion((v) => v + 1)}
+    />
+  );
+}
+
+function ChatSession({
+  conversationId,
+  resetDraft,
+}: {
+  conversationId: string | undefined;
+  resetDraft: () => void;
+}) {
   const { activeModelId, installedModels } = useAppState();
   const model = installedModels.find((m) => m.id === activeModelId);
   const modelName = model?.name ?? "No model selected";
@@ -52,6 +76,11 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
   const fileInput = useRef<HTMLInputElement>(null);
   const { messages, streaming, error } = chat;
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
+  const [fileIds, setFileIds] = useState<string[]>([]);
+  const [preparing, setPreparing] = useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
+  const preparingRef = useRef(false);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [confirmEdit, setConfirmEdit] = useState(false);
   const following = useRef(true);
@@ -72,7 +101,8 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
       setConfirmEdit(false);
     });
   }
-  function send() {
+  async function send() {
+    if (preparingRef.current) return;
     if (
       editing ||
       !input.trim() ||
@@ -84,12 +114,38 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
     )
       return;
     following.current = true;
-    void chat.send(input);
-    setInput("");
+    preparingRef.current = true;
+    setPreparing(true);
+    setAttachmentError("");
+    try {
+      const encoded = attachments.length ? await Promise.all(attachments.map(encodeFile)) : [];
+      await chat.send(
+        input,
+        undefined,
+        () => {
+          setInput("");
+          setAttachments([]);
+        },
+        encoded,
+        fileIds,
+      );
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : "Could not read attachments.");
+    } finally {
+      preparingRef.current = false;
+      setPreparing(false);
+    }
   }
 
   return (
-    <AppShell onNewChat={chat.stop}>
+    <AppShell
+      onNewChat={() => {
+        chat.stop();
+        if (!conversationId) resetDraft();
+        setInput("");
+        setEditing(null);
+      }}
+    >
       <header className="flex items-center justify-between border-b border-border px-8 py-4">
         <div>
           <h1 className="font-medium">Rebel AI</h1>
@@ -203,6 +259,27 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
                     </div>
                   ) : (
                     <>
+                      {m.attachments?.map((f) =>
+                        isImage(f.type) ? (
+                          <a key={f.id} href={fileUrl(f.id)} target="_blank" rel="noreferrer">
+                            <img
+                              src={fileUrl(f.id)}
+                              alt={f.filename}
+                              className="max-h-60 max-w-full rounded-lg"
+                            />
+                          </a>
+                        ) : (
+                          <a
+                            key={f.id}
+                            href={fileUrl(f.id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="link-quiet"
+                          >
+                            {f.filename}
+                          </a>
+                        ),
+                      )}
                       <p className="max-w-[90%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-panel-raised px-4 py-2.5">
                         {m.content}
                       </p>
@@ -224,7 +301,11 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
                   <span className="mt-1 h-6 w-6 shrink-0 rounded-md bg-primary-soft" />
                   <div className="min-w-0 flex-1">
                     {m.content ? (
-                      <AssistantMessage content={m.content} search={m.webSearch} />
+                      <AssistantMessage
+                        content={m.content}
+                        search={m.webSearch}
+                        documentCount={documentCount(m)}
+                      />
                     ) : (
                       <p className="text-subtle">
                         {m.status === "pending" ? "Thinking…" : "No reply was completed."}
@@ -240,7 +321,10 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <CopyButton
                         label="Copy Response"
-                        text={webAnswerText(m.content, m.webSearch)}
+                        text={documentAnswerText(
+                          webAnswerText(m.content, m.webSearch),
+                          documentCount(m),
+                        )}
                       />
                       {index === messages.length - 1 &&
                         messages[index - 1]?.role === "user" &&
@@ -272,6 +356,13 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
                         conversationId={m.conversationId}
                       />
                     )}
+                    {m.activity?.length ? (
+                      <ul aria-label="Tools used" className="mt-2 text-xs text-muted-foreground">
+                        {m.activity.map((a) => (
+                          <li key={a.tool}>{a.notice}</li>
+                        ))}
+                      </ul>
+                    ) : null}
                     <GenerationPerformance message={m} />
                     <MessageSources sources={m.sources} />
                     <WebSources search={m.webSearch} />
@@ -310,6 +401,22 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
           </p>
         )}
         <ConversationDocuments documents={documents} disabled={chat.pending} />
+        <FileScope ids={fileIds} onChange={setFileIds} disabled={chat.pending || preparing} />
+        <AttachmentComposer
+          files={attachments}
+          onChange={setAttachments}
+          disabled={chat.pending || preparing}
+        />
+        {attachmentError && (
+          <p role="alert" className="text-destructive">
+            {attachmentError}
+          </p>
+        )}
+        {preparing && (
+          <p role="status" className="text-xs">
+            Processing request locally…
+          </p>
+        )}
         <input
           ref={fileInput}
           type="file"
@@ -330,7 +437,7 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
           className="panel flex flex-col gap-2 p-3 focus-within:border-border-strong"
         >
           <textarea
-            disabled={!!editing}
+            disabled={!!editing || preparing}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -344,25 +451,6 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
             className="resize-none bg-transparent px-2 py-1 outline-none placeholder:text-subtle"
           />
           <div className="flex items-center justify-between">
-            <button
-              type="button"
-              aria-label="Attach file"
-              title="Attach PDF, TXT, or Markdown (up to 10 MB)"
-              disabled={!conversationId || chat.loading || chat.pending || documents.busy}
-              onClick={() => fileInput.current?.click()}
-              className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              >
-                <path d="m21 12-8.6 8.6a5 5 0 0 1-7-7l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7L10 18.4a1.7 1.7 0 0 1-2.3-2.3l8-8" />
-              </svg>
-            </button>
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <StatusDot /> {modelName}
@@ -380,6 +468,7 @@ function ChatSession({ conversationId }: { conversationId: string | undefined })
                 <button
                   type="submit"
                   disabled={
+                    preparing ||
                     !!editing ||
                     !input.trim() ||
                     chat.pending ||

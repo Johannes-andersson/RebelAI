@@ -61,6 +61,7 @@ it("shows processing/error state and wires upload, retry and removal", async () 
     expect(screen.getByRole("button", { name: "Remove notes.md" })).toBeEnabled(),
   );
   fireEvent.click(screen.getByRole("button", { name: "Remove notes.md" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove file permanently" }));
   await waitFor(() => expect(documents.remove).toHaveBeenCalledWith("conversation", "file"));
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Remove notes.md" })).toBeEnabled(),
@@ -87,7 +88,7 @@ it("shows saved source filenames and expandable page excerpts without interpreti
   );
   expect(screen.getByText("Based on: notes.pdf")).toBeInTheDocument();
   fireEvent.click(screen.getByText("Based on: notes.pdf"));
-  expect(screen.getByText("notes.pdf · Page 2 · Excerpt 1")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "notes.pdf" })).toBeInTheDocument();
   expect(screen.getByText("<script>untrusted</script>")).toBeInTheDocument();
 });
 

@@ -10,7 +10,9 @@ const tone: Record<ModelFit, string> = {
 
 export function FitBadge({ fit }: { fit: ModelFit }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${tone[fit]}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${tone[fit]}`}
+    >
       {fitLabel[fit]}
     </span>
   );

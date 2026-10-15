@@ -1,10 +1,12 @@
+import { toolActivitySchema } from "./tool-plan";
 import { calendarActionSchema } from "./calendar-action";
 import { performanceSchema } from "./generation-config";
 import { webSearchSchema } from "./web-search";
-import { sourceSchema } from "./document-config";
+import { documentSchema, sourceSchema } from "./document-config";
 import { z } from "zod";
 import type { Conversation, ConversationSummary } from "./types";
 const summarySchema = z.object({
+  isEmpty: z.boolean().optional(),
   id: z.string(),
   title: z.string(),
   createdAt: z.string(),
@@ -25,6 +27,8 @@ const conversationSchema = summarySchema.extend({
       memoryUsed: z.boolean().optional(),
       calendarAction: calendarActionSchema.optional(),
       sources: sourceSchema.array().optional(),
+      attachments: documentSchema.array().optional(),
+      activity: toolActivitySchema.array().optional(),
     }),
   ),
 });
@@ -72,8 +76,8 @@ export const conversations = {
       await request(`/${encodeURIComponent(id)}`, "PATCH", { title }),
     );
   },
-  async delete(id: string): Promise<void> {
-    await request(`/${encodeURIComponent(id)}`, "DELETE");
+  async delete(id: string, onlyEmpty = false): Promise<void> {
+    await request(`/${encodeURIComponent(id)}${onlyEmpty ? "?empty=true" : ""}`, "DELETE");
   },
 };
 export const conversationKeys = {

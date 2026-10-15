@@ -15,7 +15,9 @@ export function StatusDot({ tone = "success" }: { tone?: "success" | "primary" |
   const cls = tone === "success" ? "bg-success" : tone === "primary" ? "bg-primary" : "bg-subtle";
   return (
     <span className="relative inline-flex h-2 w-2">
-      {tone !== "muted" && <span className={`absolute inset-0 animate-ping rounded-full opacity-40 ${cls}`} />}
+      {tone !== "muted" && (
+        <span className={`absolute inset-0 animate-ping rounded-full opacity-40 ${cls}`} />
+      )}
       <span className={`relative h-2 w-2 rounded-full ${cls}`} />
     </span>
   );

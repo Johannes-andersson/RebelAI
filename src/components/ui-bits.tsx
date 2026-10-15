@@ -4,16 +4,29 @@ export function Disclosure({ label, children }: { label: string; children: React
   const [open, setOpen] = useState(false);
   return (
     <div>
-      <button onClick={() => setOpen((o) => !o)} className="link-quiet inline-flex items-center gap-1">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="link-quiet inline-flex items-center gap-1"
+      >
         {label}
         <span className={`transition-transform ${open ? "rotate-90" : ""}`}>›</span>
       </button>
-      {open && <div className="mt-4 animate-in fade-in slide-in-from-top-1 duration-300">{children}</div>}
+      {open && (
+        <div className="mt-4 animate-in fade-in slide-in-from-top-1 duration-300">{children}</div>
+      )}
     </div>
   );
 }
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
   return (
     <button
       role="switch"

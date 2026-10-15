@@ -43,6 +43,8 @@ export interface ChatMessage {
 }
 
 export interface StoredMessage extends ChatMessage {
+  activity?: import("./tool-plan").ToolActivity[] | undefined;
+  attachments?: import("./document-config").AttachedDocument[] | undefined;
   calendarAction?: import("./calendar-action").CalendarAction | undefined;
   performance?: import("./generation-config").GenerationPerformance | undefined;
   webSearch?: import("./web-search").WebSearch | undefined;
@@ -53,6 +55,7 @@ export interface StoredMessage extends ChatMessage {
   status: "pending" | "complete" | "interrupted" | "error";
 }
 export interface ConversationSummary {
+  isEmpty?: boolean | undefined;
   id: string;
   title: string;
   createdAt: string;

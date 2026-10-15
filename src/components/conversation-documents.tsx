@@ -1,3 +1,13 @@
+import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from "./ui/alert-dialog";
+import { fileUrl } from "@/lib/attachment-config";
 import type { useDocuments } from "@/hooks/use-documents";
 import type { DocumentSource } from "@/lib/document-config";
 export function ConversationDocuments({
@@ -7,6 +17,7 @@ export function ConversationDocuments({
   documents: ReturnType<typeof useDocuments>;
   disabled?: boolean;
 }) {
+  const [deleting, setDeleting] = useState<{ id: string; filename: string } | null>(null);
   return (
     <div
       className="mb-3 max-h-48 space-y-2 overflow-y-auto text-xs"
@@ -74,7 +85,7 @@ export function ConversationDocuments({
               className="link-quiet"
               aria-label={`Remove ${file.filename}`}
               disabled={documents.busy || disabled}
-              onClick={() => void documents.remove(file.id)}
+              onClick={() => setDeleting(file)}
             >
               Remove
             </button>
@@ -86,6 +97,37 @@ export function ConversationDocuments({
           )}
         </div>
       ))}
+      <AlertDialog
+        open={!!deleting}
+        onOpenChange={(open) => {
+          if (!open && !documents.busy) setDeleting(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogTitle>Remove local file?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Remove {deleting?.filename}, its local search index, and saved source references? This
+            is permanent. Conversation messages and calendar events are kept.
+          </AlertDialogDescription>
+          {documents.error && (
+            <p role="alert" className="text-destructive">
+              {documents.error}
+            </p>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={documents.busy}>Cancel</AlertDialogCancel>
+            <button
+              className="btn-primary"
+              disabled={documents.busy}
+              onClick={async () => {
+                if (deleting && (await documents.remove(deleting.id))) setDeleting(null);
+              }}
+            >
+              Remove file permanently
+            </button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {documents.error && (
         <p role="alert" className="text-destructive">
           {documents.error}{" "}
@@ -105,12 +147,21 @@ export function MessageSources({ sources }: { sources?: DocumentSource[] | undef
         Based on: {[...new Set(sources.map((s) => s.filename))].join(", ")}
       </summary>
       <div className="mt-2 space-y-2">
-        {sources.map((s) => (
+        {sources.map((s, i) => (
           <blockquote key={`${s.fileId}:${s.chunkIndex}`} className="border-l-2 border-border pl-3">
             <p className="font-medium">
-              {s.filename}
+              [D{i + 1}]{" "}
+              <a
+                className="underline"
+                href={fileUrl(s.fileId, s.page)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {s.filename}
+              </a>
               {s.page !== null ? ` · Page ${s.page}` : ""} · Excerpt {s.chunkIndex + 1}
             </p>
+            <p className="text-subtle">Quoted document excerpt — not independently verified.</p>
             <p className="mt-1 whitespace-pre-wrap">{s.text}</p>
           </blockquote>
         ))}

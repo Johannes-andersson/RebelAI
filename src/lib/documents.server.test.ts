@@ -131,7 +131,7 @@ it("marks embedding failures, changed models and missing files as errors", async
   expect(repo.documents.get(id, file.id).error).toContain("missing");
 });
 it("rejects unsupported, oversized and binary paths; filenames cannot escape storage", () => {
-  expect(() => repo.documents.create(id, "image.png", bytes("x"))).toThrow("Unsupported");
+  expect(() => repo.documents.create(id, "image.exe", bytes("x"))).toThrow("Unsupported");
   expect(() => repo.documents.create(id, "big.txt", new Uint8Array(10 * 1024 * 1024 + 1))).toThrow(
     "10 MB",
   );

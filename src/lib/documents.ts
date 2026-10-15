@@ -46,9 +46,9 @@ export const documents = {
       .array()
       .parse(await request(conversationId, "", { signal: signal ?? null }));
   },
-  async upload(conversationId: string, file: File) {
+  async upload(conversationId: string, file: File, signal?: AbortSignal) {
     if (file.size > documentLimits.bytes) throw new Error("File too large. The limit is 10 MB.");
-    if (!/\.(pdf|txt|md|markdown)$/i.test(file.name))
+    if (!/\.(pdf|txt|md|markdown|jpg|jpeg|png|webp)$/i.test(file.name))
       throw new Error("Unsupported file type. Attach a PDF, TXT, or Markdown file.");
     return documentSchema.parse(
       await request(conversationId, "", {
@@ -56,8 +56,26 @@ export const documents = {
         headers: {
           "Content-Type": "application/octet-stream",
           "X-File-Name": encodeURIComponent(file.name),
+          "X-Relative-Path": encodeURIComponent(file.webkitRelativePath || ""),
         },
         body: file,
+        signal: signal ?? null,
+      }),
+    );
+  },
+  async cancel(conversationId: string, id: string) {
+    return request(conversationId, id, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cancel: true }),
+    });
+  },
+  async rename(conversationId: string, id: string, filename: string, relativePath: string) {
+    return documentSchema.parse(
+      await request(conversationId, id, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, relativePath }),
       }),
     );
   },

@@ -1,6 +1,9 @@
 import type { WebSearch } from "./web-search";
 import { readChatStream } from "./chat-stream";
 export interface ChatRequest {
+  attachments?: import("./attachment-config").PendingAttachment[];
+  fileIds?: string[];
+  newConversation?: boolean;
   timeZone?: string;
   revision?: { kind: "regenerate" | "edit"; userMessageId: string; expectedTailId: string };
   modelId: string;

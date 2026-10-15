@@ -11,7 +11,7 @@ export function buildChatContext(
   memories: SavedMemory[],
   web?: WebSearch,
 ) {
-  const messages: { role: string; content: string }[] = [];
+  const messages: { role: string; content: string; images?: string[] }[] = [];
   if (memories.length) messages.push({ role: "system", content: memoryContext(memories) });
   if (documents !== null) messages.push({ role: "system", content: documentContext(documents) });
   if (web) messages.push(...webContext(web));

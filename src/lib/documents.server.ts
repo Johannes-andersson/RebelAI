@@ -1,5 +1,8 @@
+/* eslint-disable no-control-regex -- reject unsafe filename and path characters */
 import type { DatabaseSync } from "node:sqlite";
-import { randomUUID } from "node:crypto";
+import { isImage, relativePath as safePath } from "./attachment-config";
+import { validateImage } from "./image-input.server";
+import { randomUUID, createHash } from "node:crypto";
 import { DocumentStorage } from "./document-storage.server";
 import {
   DocumentError,
@@ -34,6 +37,14 @@ export class DocumentRepository {
         WHERE status IN ('importing','extracting','preparing','indexing');
       UPDATE documents SET error='The local document-search component could not be prepared. Retry to continue.'
         WHERE status='error' AND error LIKE '%ollama pull%';`);
+    const columns = db.prepare("PRAGMA table_info(documents)").all();
+    if (!columns.some((c) => c["name"] === "relativePath"))
+      db.exec("ALTER TABLE documents ADD COLUMN relativePath TEXT NOT NULL DEFAULT ''");
+    if (!columns.some((c) => c["name"] === "contentHash"))
+      db.exec("ALTER TABLE documents ADD COLUMN contentHash TEXT");
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS message_attachments (messageId TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE, fileId TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE, PRIMARY KEY(messageId,fileId));`,
+    );
   }
   library(): (AttachedDocument & { conversationTitle: string })[] {
     for (const row of this.db.prepare("SELECT id FROM documents WHERE status='ready'").all()) {
@@ -62,29 +73,60 @@ export class DocumentRepository {
     if (!file) throw new DocumentError("This attachment no longer exists.", 404);
     return file;
   }
-  create(conversationId: string, filename: string, data: Uint8Array) {
-    if (!this.db.prepare("SELECT id FROM conversations WHERE id=?").get(conversationId))
-      throw new DocumentError("This conversation no longer exists.", 404);
-    if (this.list(conversationId).length >= documentLimits.files)
-      throw new DocumentError("A conversation can have up to 20 attachments.");
+  create(conversationId: string, filename: string, data: Uint8Array, path = "") {
+    const relativePath = safePath(path);
     const name =
       filename
         .split(/[\\/]/)
         .pop()
         // Strip control characters from uploaded filenames.
-        // eslint-disable-next-line no-control-regex
         ?.replace(/[\u0000-\u001f\u007f]/g, "")
         .trim() ?? "";
     const extension = name.split(".").pop()?.toLowerCase();
-    const type = extension === "markdown" ? "md" : extension;
-    if (!name || name.length > 255 || !["pdf", "txt", "md"].includes(type ?? ""))
-      throw new DocumentError("Unsupported file type. Attach a PDF, TXT, or Markdown file.");
+    const type = extension === "markdown" ? "md" : extension === "jpeg" ? "jpg" : extension;
+    if (
+      !name ||
+      name.length > 255 ||
+      !["pdf", "txt", "md", "jpg", "png", "webp"].includes(type ?? "")
+    )
+      throw new DocumentError("Unsupported file type. Use PDF, TXT, Markdown, JPEG, PNG, or WebP.");
     if (!data.length || data.length > documentLimits.bytes)
       throw new DocumentError("Choose a non-empty file no larger than 10 MB.", 413);
+    if (isImage(type!)) validateImage(data, type!);
+    const hash = createHash("sha256").update(data).digest("hex");
+    const duplicate = this.db
+      .prepare(
+        "SELECT id FROM documents WHERE conversationId=? AND contentHash=? AND relativePath=?",
+      )
+      .get(conversationId, hash, relativePath);
+    if (duplicate) return this.get(conversationId, String(duplicate["id"]));
+    const total = Number(
+      this.db.prepare("SELECT COALESCE(SUM(size),0) AS bytes FROM documents").get()?.["bytes"],
+    );
+    if (total + data.length > documentLimits.totalBytes)
+      throw new DocumentError(
+        "Local file storage limit reached (1 GB). Remove files before importing more.",
+        413,
+      );
+    if (!this.db.prepare("SELECT id FROM conversations WHERE id=?").get(conversationId))
+      throw new DocumentError("This conversation no longer exists.", 404);
+    if (this.list(conversationId).length >= documentLimits.files)
+      throw new DocumentError("A conversation can have up to 100 attachments.");
     const id = randomUUID();
     this.db
-      .prepare("INSERT INTO documents VALUES (?, ?, ?, ?, ?, ?, 'importing', NULL, NULL)")
-      .run(id, conversationId, name, type!, data.length, new Date().toISOString());
+      .prepare(
+        "INSERT INTO documents (id,conversationId,filename,type,size,createdAt,status,error,embeddingModel,relativePath,contentHash) VALUES (?, ?, ?, ?, ?, ?, 'importing', NULL, NULL, ?, ?)",
+      )
+      .run(
+        id,
+        conversationId,
+        name,
+        type!,
+        data.length,
+        new Date().toISOString(),
+        relativePath,
+        hash,
+      );
     try {
       this.storage.write(id, data);
     } catch {
@@ -104,6 +146,13 @@ export class DocumentRepository {
       throw new DocumentError("This attachment was removed.", 404);
   }
   index(id: string, model: string, chunks: IndexedChunk[]) {
+    const count = Number(
+      this.db.prepare("SELECT COUNT(*) AS n FROM document_chunks WHERE fileId<>?").get(id)?.["n"],
+    );
+    if (count + chunks.length > documentLimits.totalChunks)
+      throw new DocumentError(
+        "Local search index limit reached (6000 excerpts). Remove unneeded documents and retry.",
+      );
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.prepare("DELETE FROM document_chunks WHERE fileId=?").run(id);
@@ -122,14 +171,17 @@ export class DocumentRepository {
       throw error;
     }
   }
-  chunks(conversationId: string): (DocumentSource & { vector: number[]; model: string })[] {
+  chunks(
+    conversationId: string,
+    ids?: string[],
+  ): (DocumentSource & { vector: number[]; model: string })[] {
     const rows = this.db
       .prepare(
         `SELECT c.fileId, d.filename, c.chunkIndex, c.page, c.text, c.vector, d.embeddingModel AS model
       FROM document_chunks c JOIN documents d ON d.id=c.fileId
-      WHERE d.conversationId=? AND d.status='ready' ORDER BY d.createdAt,c.chunkIndex`,
+      WHERE ${ids ? `d.id IN (${ids.map(() => "?").join(",") || "NULL"})` : "d.conversationId=?"} AND d.status='ready' ORDER BY d.createdAt,c.chunkIndex`,
       )
-      .all(conversationId);
+      .all(...(ids ?? [conversationId]));
     return rows.map((r) => ({
       ...r,
       vector: JSON.parse(r["vector"] as string),
@@ -153,6 +205,49 @@ export class DocumentRepository {
       JOIN documents d ON d.id=s.fileId WHERE s.messageId=? ORDER BY s.rowid`,
       )
       .all(messageId) as unknown as DocumentSource[];
+  }
+  find(id: string) {
+    const row = this.db.prepare("SELECT * FROM documents WHERE id=?").get(id) as unknown as
+      AttachedDocument | undefined;
+    if (!row) throw new DocumentError("This local file no longer exists.", 404);
+    return row;
+  }
+  attach(messageId: string, ids: string[]) {
+    const statement = this.db.prepare("INSERT OR IGNORE INTO message_attachments VALUES (?,?)");
+    for (const id of ids) statement.run(messageId, id);
+  }
+  attachments(messageId: string): AttachedDocument[] {
+    return this.db
+      .prepare(
+        "SELECT d.* FROM documents d JOIN message_attachments a ON a.fileId=d.id WHERE a.messageId=?",
+      )
+      .all(messageId) as unknown as AttachedDocument[];
+  }
+  rename(conversationId: string, id: string, name: string, path: string) {
+    const file = this.get(conversationId, id);
+    if (!name.trim() || name.length > 255 || /[\\/\x00-\x1f]/.test(name))
+      throw new DocumentError("Choose a valid filename.");
+    const ext = name.split(".").pop()?.toLowerCase();
+    const type = ext === "jpeg" ? "jpg" : ext === "markdown" ? "md" : ext;
+    if (type !== file.type) throw new DocumentError("Keep the original file extension.");
+    this.db
+      .prepare("UPDATE documents SET filename=?,relativePath=? WHERE id=?")
+      .run(name.trim(), safePath(path), id);
+    return this.get(conversationId, id);
+  }
+  preserveShared(conversationId: string, id: string) {
+    const reference = this.db
+      .prepare(
+        `SELECT m.conversationId FROM messages m JOIN (
+      SELECT messageId FROM message_sources WHERE fileId=? UNION SELECT messageId FROM message_attachments WHERE fileId=?
+    ) r ON r.messageId=m.id WHERE m.conversationId<>? LIMIT 1`,
+      )
+      .get(id, id, conversationId);
+    if (!reference) return false;
+    this.db
+      .prepare("UPDATE documents SET conversationId=? WHERE id=?")
+      .run(String(reference["conversationId"]), id);
+    return true;
   }
   delete(conversationId: string, id: string) {
     this.get(conversationId, id);

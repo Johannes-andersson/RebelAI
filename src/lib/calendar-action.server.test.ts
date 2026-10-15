@@ -145,3 +145,87 @@ it("resolves an explicit month date even if the model reformats it", async () =>
   );
   expect(result?.draft).toMatchObject({ date: "2026-10-15", time: "10:00" });
 });
+
+it("prepares a document-based draft only from copied evidence and never saves an event", async () => {
+  model({
+    ...blank,
+    title: "Project meeting",
+    dateExpression: "October 20, 2026",
+    startTime: "3 PM",
+  });
+  const result = await prepareCalendarAction(
+    "Find the meeting in my files and add it to my calendar",
+    "qwen2.5:7b",
+    "UTC",
+    signal(),
+    now,
+    [
+      {
+        fileId: "f",
+        filename: "meeting.txt",
+        chunkIndex: 0,
+        page: null,
+        text: "Project meeting on October 20, 2026 at 3 PM.",
+      },
+    ],
+  );
+  expect(result?.draft).toMatchObject({
+    date: "2026-10-20",
+    time: "15:00",
+    title: "Project meeting",
+  });
+  expect(result?.notices.join(" ")).toContain("untrusted document excerpts");
+});
+it("keeps fabricated document dates empty and asks to resolve conflicting dates", async () => {
+  model({ ...blank, dateExpression: "October 20, 2026", startTime: "3 PM" });
+  const prompt = "Find the deadline in my PDFs and prepare a calendar event";
+  const empty = await prepareCalendarAction(prompt, "qwen2.5:7b", "UTC", signal(), now, []);
+  expect(empty?.draft.date).toBe("");
+  expect(empty?.draft.time).toBe("");
+  const conflict = await prepareCalendarAction(prompt, "qwen2.5:7b", "UTC", signal(), now, [
+    {
+      fileId: "f",
+      filename: "test.txt",
+      chunkIndex: 0,
+      page: null,
+      text: "October 20, 2026 at 3 PM. October 25, 2026 at 4 PM.",
+    },
+  ]);
+  expect(conflict?.draft.date).toBe("");
+  expect(conflict?.draft.time).toBe("");
+});
+
+it("returns a real clarification card when an explicit prepare request is misclassified", async () => {
+  model({ ...blank, intent: "none" });
+  const result = await prepareCalendarAction(
+    "Find the meeting date in the selected document and prepare a calendar event.",
+    "qwen2.5:7b",
+    "UTC",
+    signal(),
+    now,
+    [],
+  );
+  expect(result?.draft.date).toBe("");
+  expect(result?.notices.join(" ")).toContain("Nothing has been saved");
+});
+
+it("matches reformatted dates and times to literal document evidence", async () => {
+  model({ ...blank, title: "Project meeting", dateExpression: "2026-10-20", startTime: "15:00" });
+  const result = await prepareCalendarAction(
+    "Find the meeting in my documents and prepare a calendar event",
+    "qwen2.5:7b",
+    "UTC",
+    signal(),
+    now,
+    [
+      {
+        fileId: "f",
+        filename: "meeting.txt",
+        chunkIndex: 0,
+        page: null,
+        text: "Project meeting on October 20, 2026 at 3 PM.",
+      },
+    ],
+  );
+  expect(result?.draft).toMatchObject({ date: "2026-10-20", time: "15:00" });
+});

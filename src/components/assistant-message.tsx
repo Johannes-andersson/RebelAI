@@ -1,3 +1,4 @@
+import { documentAnswerText } from "@/lib/document-config";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Children, isValidElement, type ReactNode } from "react";
@@ -27,26 +28,30 @@ function CodeBlock({ children }: { children?: ReactNode }) {
 export function AssistantMessage({
   content,
   search,
+  documentCount,
 }: {
   content: string;
+  documentCount?: number | undefined;
   search?: WebSearch | undefined;
 }) {
   // Source validation runs before Markdown, and web-answer links are disabled
   // even if an unusual Markdown construct survives the text filter.
-  const text = webAnswerText(content, search);
+  const text = documentAnswerText(webAnswerText(content, search), documentCount);
   return (
     <div className="min-w-0 break-words leading-relaxed text-foreground/90 [&_p]:my-3 [&_h1]:my-4 [&_h1]:text-2xl [&_h1]:font-semibold [&_h2]:my-4 [&_h2]:text-xl [&_h2]:font-semibold [&_h3]:my-3 [&_h3]:font-semibold [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground [&_hr]:my-5 [&_hr]:border-border">
       <Markdown
         remarkPlugins={[remarkGfm]}
         skipHtml
-        urlTransform={(url) => (!search && safeWebUrl(url) ? url : "")}
+        urlTransform={(url) =>
+          !search && documentCount === undefined && safeWebUrl(url) ? url : ""
+        }
         components={{
           pre: CodeBlock,
           code: ({ children }) => (
             <code className="rounded bg-panel-raised px-1 font-mono text-sm">{children}</code>
           ),
           a: ({ href, children }) =>
-            href && !search && safeWebUrl(href) ? (
+            href && !search && documentCount === undefined && safeWebUrl(href) ? (
               <a
                 className="link-quiet underline"
                 href={href}

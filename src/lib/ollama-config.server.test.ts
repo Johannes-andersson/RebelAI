@@ -2,8 +2,14 @@ import { access } from "node:fs/promises";
 import { platform } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ollamaConnectionError, ollamaUrl, resolveModelTag } from "./ollama-config.server";
-vi.mock("node:fs/promises", () => { const mock = { access: vi.fn() }; return { ...mock, default: mock }; });
-vi.mock("node:os", () => { const mock = { platform: vi.fn(), homedir: () => "/Users/test" }; return { ...mock, default: mock }; });
+vi.mock("node:fs/promises", () => {
+  const mock = { access: vi.fn() };
+  return { ...mock, default: mock };
+});
+vi.mock("node:os", () => {
+  const mock = { platform: vi.fn(), homedir: () => "/Users/test" };
+  return { ...mock, default: mock };
+});
 beforeEach(() => {
   vi.stubEnv("OLLAMA_BASE_URL", "");
   vi.stubEnv("PATH", "");

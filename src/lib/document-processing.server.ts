@@ -1,3 +1,4 @@
+import { isImage } from "./attachment-config";
 import type { DocumentRepository } from "./documents.server";
 import { extractText } from "./document-extraction.server";
 import { chunkPages } from "./document-chunks";
@@ -22,8 +23,12 @@ export async function processDocument(
 ) {
   try {
     const file = db.get(conversationId, id);
+    if (isImage(file.type)) {
+      db.state(id, "ready");
+      return;
+    }
     db.state(id, "extracting");
-    const pages = await extractText(db.storage.read(id), file.type);
+    const pages = await extractText(db.storage.read(id), file.type as "pdf" | "txt" | "md");
     signal?.throwIfAborted();
     const chunks = chunkPages(pages);
     if (provider.prepare) {

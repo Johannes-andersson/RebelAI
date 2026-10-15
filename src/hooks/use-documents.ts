@@ -34,8 +34,10 @@ export function useDocuments(id: string | undefined) {
     setError(null);
     try {
       await action();
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not process the local attachment.");
+      return false;
     } finally {
       setBusy(false);
       setImporting(null);

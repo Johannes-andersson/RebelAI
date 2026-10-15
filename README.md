@@ -222,12 +222,11 @@ there is no cloud database, account, or sync. Explicit saved memories use the sa
 - `POST /api/chat` receives a conversation ID, unique message ID, model ID, and
   new user message. The server reads prior context from SQLite.
 
-Opening `/chat` creates a durable empty conversation and puts its ID in the URL.
-Reloading that URL opens the same history. **New Chat** creates another record.
+Opening `/chat` and selecting **New Chat** open an unsaved browser draft. The first accepted message creates the conversation and its messages atomically; visits and reloads do not create empty records. The stable draft ID prevents duplicate records on retries.
 The sidebar shows actual titles and opens each conversation's full history.
 Titles use the first user message, with whitespace collapsed and a 60-character
 limit, without an extra model request. Deletion requires confirmation. Deleting
-the open conversation returns to a fresh empty conversation.
+the open conversation returns to an unsaved draft. A keyboard-accessible three-dot menu offers Rename and Delete. **Review empty conversations** exposes legacy records with no messages or document references; deletion is confirmed and rechecks emptiness. Titles alone never determine cleanup.
 
 The server saves the user message and a pending assistant record atomically
 before calling Ollama. Streamed text is checkpointed before it is forwarded, and
@@ -314,13 +313,12 @@ The layers are intentionally small:
 
 `POST /api/conversations/:id/documents` takes raw file bytes with an encoded
 `X-File-Name` header; GET lists attachments. POST to `.../documents/:documentId`
-retries indexing; DELETE removes the attachment. No original-file download route
-or global shared file library is added.
+retries indexing; PATCH renames/organizes metadata and DELETE removes the attachment. `GET /api/documents` lists the library; `?id=<fileId>` serves a local original with a fixed content type, no sniffing, and a sandbox policy.
 
-Limits: 10 MB and 500,000 extracted characters per file, 500 PDF pages, 20 files
+Limits: 10 MB and 500,000 extracted characters per file, 500 PDF pages, 100 files
 per conversation, and two concurrent processing jobs. Chunks contain up to 1,200
 characters with roughly 180 characters of overlap. Indexing batches eight chunks
-per Ollama request. Retrieval scans only ready chunks in the current conversation,
+per Ollama request. Retrieval scans ready chunks in the current conversation by default, or explicitly selected files/folders (at most 20 files),
 selects up to four above a 0.2 cosine score, and never sends whole documents.
 This straightforward in-process search suits small local collections; it is not
 a separate vector database or automatic conversation-memory extraction.
@@ -333,8 +331,7 @@ and PDF pages. This records the supplied evidence, not proof every model claim i
 correct. Without relevant ready excerpts, the model is told it has no retrieved
 file evidence. Broken files remain separate errors and do not poison good indexes.
 
-Only text extraction is supported: scanned/image-only, corrupted, locked, and
-unsupported PDFs show clear errors. No OCR or image interpretation is performed.
+PDF extraction requires selectable text: scanned/image-only, corrupted, locked, and unsupported PDFs show errors. JPEG, PNG, and WebP can be interpreted by a selected local vision model; this is not guaranteed OCR. Images are not embedded as text.
 PDF.js is a server dependency; it reads local bytes, never a document URL.
 Interrupted indexing becomes a retryable error after a process restart. Ready
 files and indexes survive reloads/restarts. If a local original disappears, the
@@ -553,14 +550,11 @@ Ollama references: [runtime options](https://docs.ollama.com/modelfile),
 
 ## Local Files library and Calendar
 
-The **Files** page lists actual uploaded PDF, TXT, and Markdown documents across
+The **Files** page lists actual uploaded documents and images across
 conversations. Choose an existing conversation or create a new file conversation,
 then upload a document. Management reuses chat's upload, indexing, preparation
 progress, retry, and removal APIs. **Chat with files** opens the owning conversation;
-retrieval does not cross conversation boundaries. Metadata, originals, and indexes
-remain in the existing local data directory. Limits remain 10 MB per file and 20
-files per conversation. Folder import and OCR are not supported. Removing a file
-also removes its saved source excerpts; deleting its conversation removes its files.
+retrieval crosses conversation boundaries only through explicit file/folder selection in Chat. Metadata, originals, and indexes remain local. Multi-file selection, drag-and-drop, and browser folder selection preserve relative paths. Imports are sequential, report per-file failures, reuse matching content/path uploads, and support cancellation. Limits are 10 MB per file, 100 files per conversation, 1 GB of originals, and 6000 indexed excerpts. Files can be filtered, renamed, moved by relative-path metadata, reindexed, opened, or removed with confirmation. Deleting an owning conversation preserves files referenced by another conversation by transferring ownership. Explicit file removal removes its saved source excerpts; messages and calendar events remain.
 
 **Calendar** offers upcoming/all events, manual create/edit, and confirmed deletion.
 The existing SQLite database gains an additive `calendar_events` table and start-date
@@ -628,3 +622,16 @@ JSON output. Extraction failures leave a retryable chat error and never create a
 event. Ordinary chat retains the existing streaming, cancellation, history, model
 selection, and internet-permission behavior. No external API is used for calendar
 classification or creation.
+
+
+## Milestones 7–8: local attachments and bounded tool coordination
+
+Chat accepts up to four pending attachments totaling 10 MB, with image previews and removal before sending. Draft files stay in the browser until a message is submitted. Server-side validation checks format, size, and image signatures. Originals are kept without lossy resizing to preserve diagram detail; PNG dimensions above 40 megapixels are rejected. JPEG/WebP are byte bounded; model decoding can still fail. Local Ollama `/api/show` must report `vision` before image input is allowed. Remote/cloud models are rejected. No model is silently selected or downloaded. Images and message references survive restart. Select an earlier image from **Search files** to analyze it in another turn. Image OCR and interpretation can be wrong.
+
+The existing orchestrator now runs a fixed application-controlled plan: local file retrieval, optional local image observations for retrieval, at most one permitted web search, one calendar draft, and ordinary streamed local inference. It does not execute model-provided commands or loop through tool calls. The overall request has a five-minute deadline, with shorter model-call limits. Calendar extraction uses the selected local model and validates copied date/time facts against the user request or retrieved excerpts. Ambiguous, relative document dates and conflicting dates require clarification in the editable preview. Saving still uses the existing confirmed, transactional, idempotent action endpoint.
+
+Retrieved documents, images, and web snippets cannot authorize tools. External queries are derived only from the user's request, never from image observations or retrieved file contents; private-context follow-up history is excluded from search-query construction. Internet permission is rechecked by the existing search service. Tool activity and failures persist with messages. Source IDs are assigned in application code: [D1] document excerpts and [S1] web snippets. Unknown document IDs are shown as unavailable, and source links come from stored results. This validates references, not factual correctness or exhaustive coverage.
+
+SQLite migrations are additive and idempotent: `documents.relativePath`, `documents.contentHash`, `message_attachments`, and `message_tool_activity`. No existing records are automatically deleted. Existing files are not rehashed during startup; deduplication applies to new uploads. Restart the local server after updating these server/schema changes; development hot reload retains the previous repository instance.
+
+See [the milestone validation report](docs/milestones-7-8.md) for tested workflows and limitations.

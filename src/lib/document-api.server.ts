@@ -43,9 +43,15 @@ export async function handleDocuments(
       } catch {
         throw new DocumentError("Invalid filename.");
       }
-      const file = db.create(conversationId, name, await readUpload(request));
+      const file = db.create(
+        conversationId,
+        name,
+        await readUpload(request),
+        decodeURIComponent(request.headers.get("x-relative-path") ?? ""),
+      );
       try {
-        startDocumentJob(db, conversationId, file.id);
+        if (["importing", "error"].includes(file.status))
+          startDocumentJob(db, conversationId, file.id);
       } catch (error) {
         db.state(
           file.id,
@@ -58,8 +64,21 @@ export async function handleDocuments(
       if (request.headers.get("content-type") !== "application/json")
         throw new DocumentError("Expected a JSON retry request.", 415);
       db.get(conversationId, id);
+      const action = await request.json().catch(() => ({}));
+      if (action?.cancel === true) {
+        cancelDocumentJob(id);
+        return Response.json(db.get(conversationId, id));
+      }
       startDocumentJob(db, conversationId, id);
       result = db.get(conversationId, id);
+    } else if (request.method === "PATCH" && id) {
+      if (!request.headers.get("content-type")?.includes("application/json"))
+        throw new DocumentError("Expected JSON.", 415);
+      const body = z
+        .object({ filename: z.string().max(255), relativePath: z.string().max(500) })
+        .strict()
+        .parse(await request.json());
+      result = db.rename(conversationId, id, body.filename, body.relativePath);
     } else if (request.method === "DELETE" && id) {
       cancelDocumentJob(id);
       db.delete(conversationId, id);

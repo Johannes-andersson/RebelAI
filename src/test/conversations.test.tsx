@@ -70,27 +70,25 @@ it("shows real sidebar titles and links to separate conversation IDs", async () 
   expect(link).toHaveAttribute("href", "/chat?conversation=one");
   expect(screen.queryByText("Explain quantum computing")).not.toBeInTheDocument();
 });
-it("creates a fresh record when New Chat is clicked", async () => {
+it("opens an unsaved draft when New Chat is clicked", async () => {
   setup();
   fireEvent.click(screen.getByRole("button", { name: /New Chat/ }));
-  await waitFor(() => expect(conversations.create).toHaveBeenCalledTimes(1));
+  expect(conversations.create).not.toHaveBeenCalled();
   await waitFor(() =>
     expect(navigate).toHaveBeenCalledWith({
       to: "/chat",
-      search: { conversation: expect.any(String) },
+      search: {},
     }),
   );
-  expect(items).toHaveLength(2);
+  expect(items).toHaveLength(1);
 });
 it("confirms deletion and returns the active conversation to a new empty URL", async () => {
   setup();
-  fireEvent.click(
-    await screen.findByRole("button", { name: `Delete conversation: ${item.title}` }),
-  );
+  await menu("Delete");
   expect(conversations.delete).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(conversations.delete).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: `Delete conversation: ${item.title}` }));
+  await menu("Delete");
   fireEvent.click(screen.getByRole("button", { name: "Delete conversation" }));
   await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/chat", search: {} }));
   expect(items).toEqual([]);
@@ -107,13 +105,40 @@ it("renames and immediately refreshes the sidebar only after saving", async () =
     return { ...items[0]!, messages: [] };
   });
   setup();
-  fireEvent.click(
-    await screen.findByRole("button", { name: `Rename conversation: ${item.title}` }),
-  );
+  await menu("Rename");
   fireEvent.change(screen.getByRole("textbox", { name: "Conversation title" }), {
     target: { value: "Renamed locally" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save title" }));
   expect(await screen.findByRole("link", { name: "Renamed locally" })).toBeInTheDocument();
   expect(conversations.rename).toHaveBeenCalledWith("one", "Renamed locally");
+});
+
+async function menu(action: string) {
+  const trigger = await screen.findByRole("button", {
+    name: `Conversation options: ${item.title}`,
+  });
+  fireEvent.keyDown(trigger, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("menuitem", { name: action }));
+}
+it("retains the conversation and confirmation when deletion fails", async () => {
+  vi.mocked(conversations.delete).mockRejectedValueOnce(new Error("Disk unavailable"));
+  setup();
+  await menu("Delete");
+  fireEvent.click(screen.getByRole("button", { name: "Delete conversation" }));
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole("alert").some((e) => e.textContent?.includes("Disk unavailable")),
+    ).toBe(true),
+  );
+  expect(items).toHaveLength(1);
+  expect(navigate).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Delete conversation" })).toBeInTheDocument();
+});
+it("hides truly empty records until the user reviews them", async () => {
+  items = [{ ...item, isEmpty: true }];
+  setup();
+  fireEvent.click(await screen.findByText("Review empty conversations"));
+  expect(await screen.findByRole("link", { name: item.title })).toBeInTheDocument();
+  expect(conversations.delete).not.toHaveBeenCalled();
 });

@@ -55,6 +55,7 @@ it("shows real files, opens their chat, uploads and removes through existing doc
     fireEvent.click(screen.getByText("Manage / remove"));
     await screen.findByLabelText("Remove notes.txt");
     fireEvent.click(screen.getByLabelText("Remove notes.txt"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove file permanently" }));
     await waitFor(() => expect(documents.remove).toHaveBeenCalledWith("one", "file"));
     const upload = new File(["Content"], "new.md");
     await waitFor(() => expect(screen.getByLabelText("Upload document")).toBeEnabled());

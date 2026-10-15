@@ -59,30 +59,6 @@ export function useConversationChat(id: string | undefined) {
   }, [retry]);
 
   useEffect(() => {
-    if (id) return;
-    newId.current ??= crypto.randomUUID();
-    const controller = new AbortController();
-    const current = appStore.get();
-    void conversations
-      .create(
-        newId.current,
-        current.installedModels.find((m) => m.id === current.activeModelId)?.tag ?? null,
-        controller.signal,
-      )
-      .then((conversation) => {
-        if (controller.signal.aborted) return;
-        client.setQueryData(conversationKeys.detail(conversation.id), conversation);
-        void client.invalidateQueries({ queryKey: conversationKeys.list });
-        void navigate({ to: "/chat", search: { conversation: conversation.id }, replace: true });
-      })
-      .catch((cause: unknown) => {
-        if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "Could not create conversation.");
-      });
-    return () => controller.abort();
-  }, [id, client, navigate, retry]);
-
-  useEffect(() => {
     if (detail.data && !request.current) setMessages(detail.data.messages);
   }, [detail.data]);
   useEffect(() => {
@@ -98,15 +74,19 @@ export function useConversationChat(id: string | undefined) {
     }
   }, [detail.data, inventoryReady, inventoryAvailable, state.installedModels]);
 
-  async function send(text: string, revision?: ChatRequest["revision"], onAccepted?: () => void) {
+  async function send(
+    text: string,
+    revision?: ChatRequest["revision"],
+    onAccepted?: () => void,
+    attachments?: ChatRequest["attachments"],
+    fileIds?: string[],
+  ) {
     const content = text.trim();
     const selected = appStore.get().activeModelId;
     if (
       !inventoryReady ||
       !inventoryAvailable ||
-      !restored.current ||
-      !id ||
-      !detail.data ||
+      (!!id && (!restored.current || !detail.data)) ||
       !content ||
       request.current ||
       saving ||
@@ -116,9 +96,11 @@ export function useConversationChat(id: string | undefined) {
       return;
     const controller = new AbortController();
     request.current = controller;
+    newId.current ??= crypto.randomUUID();
+    const targetId = id ?? newId.current;
     const messageId = crypto.randomUUID();
     const assistantId = `${messageId}:assistant`;
-    const common = { conversationId: id, createdAt: new Date().toISOString() };
+    const common = { conversationId: targetId, createdAt: new Date().toISOString() };
     let accepted = false;
     const accept = () => {
       if (accepted || request.current !== controller || controller.signal.aborted) return;
@@ -146,19 +128,22 @@ export function useConversationChat(id: string | undefined) {
         ];
       });
     };
-    if (!revision) accept();
+
     setStreaming(assistantId);
     setError(null);
     let firstToken = true;
     try {
       await chatRuntime.streamReply(
         {
-          conversationId: id,
+          conversationId: targetId,
           messageId,
+          newConversation: !id,
           modelId: selected,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           content,
           ...(revision ? { revision } : {}),
+          ...(attachments?.length ? { attachments } : {}),
+          ...(fileIds?.length ? { fileIds } : {}),
         },
         (chunk) => {
           if (request.current !== controller || controller.signal.aborted) return;
@@ -195,11 +180,20 @@ export function useConversationChat(id: string | undefined) {
         request.current = null;
         setStreaming(null);
         // The server owns persistence. Reload canonical status even after cancellation.
-        const saved = await detail.refetch();
+        const saved = id
+          ? await detail.refetch()
+          : await conversations
+              .get(targetId)
+              .then((data) => ({ data, error: null }))
+              .catch(() => ({ data: undefined, error: true }));
         // React Query may preserve the old data reference when a request failed
         // before saving anything. Still replace the optimistic pending messages.
         if (mounted.current && !request.current && saved.data && !saved.error)
           setMessages(saved.data.messages);
+        if (!id && mounted.current && saved.data) {
+          client.setQueryData(conversationKeys.detail(targetId), saved.data);
+          void navigate({ to: "/chat", search: { conversation: targetId }, replace: true });
+        }
       }
       void client.invalidateQueries({ queryKey: conversationKeys.list });
     }
@@ -207,12 +201,13 @@ export function useConversationChat(id: string | undefined) {
 
   async function selectModel(modelId: string) {
     const model = state.installedModels.find((m) => m.id === modelId);
-    if (!id || !model || request.current || saving || messages.some((m) => m.status === "pending"))
-      return;
+    if (!model || request.current || saving || messages.some((m) => m.status === "pending")) return;
     setSaving(true);
     try {
-      const updated = await conversations.update(id, model.tag);
-      client.setQueryData(conversationKeys.detail(id), updated);
+      if (id) {
+        const updated = await conversations.update(id, model.tag);
+        client.setQueryData(conversationKeys.detail(id), updated);
+      }
       if (!mounted.current) return;
       appStore.set({ activeModelId: modelId, running: modelId });
       setError(null);
@@ -226,7 +221,7 @@ export function useConversationChat(id: string | undefined) {
     messages,
     streaming,
     error: error ?? detail.error?.message ?? null,
-    loading: !id || detail.isPending,
+    loading: !!id && detail.isPending,
     modelLoading: !inventoryReady || !inventoryAvailable,
     saving,
     send,
