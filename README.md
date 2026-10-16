@@ -343,10 +343,12 @@ file permissions rather than encryption at rest.
 
 Tell Rebel AI “Remember that…”, “Remember this…”, “Save this to memory…” or
 “Keep this in memory…” followed by the information to save. Only these direct
-instructions save memory; normal messages are never automatically extracted.
-A successful acknowledgement means the text has been saved locally.
+instructions prepare an editable preview; confirm it before anything is saved. Normal
+messages are never automatically extracted. Only a confirmed save means the text
+has been stored locally.
 
-Settings → Memory lists saved information, lets you delete individual entries,
+Settings → Memory lists and searches saved information, supports editing and categories,
+and requires confirmation to delete individual entries,
 and requires confirmation to clear everything. Memory starts enabled. Turning it
 off stops capture and recall without removing existing entries; turning it back
 on restores their availability. Deleting memories does not delete conversations,
@@ -572,8 +574,8 @@ is not general natural-language understanding: review every field, including
 month, timezone and daylight-saving transitions. Only **Confirm and save** persists
 a draft, and the API validates all data and requires `confirmed: true`. Drafts are
 not saved when cancelled. The Calendar page uses this deterministic parser; normal chat additionally supports
-reviewed event creation through the local action router described below. There are no notifications, recurrence,
-calendar integrations, invites, or cloud synchronization.
+reviewed event creation through the local action router described below. Milestone 9 adds local recurrence and in-app reminders (see below). There are no
+external calendar integrations, invites, or cloud synchronization.
 
 Visible branding uses the existing Rebel AI wordmark and a matching original R
 favicon (SVG plus legacy ICO fallback). Lovable development/build integration and
@@ -582,7 +584,7 @@ repository provenance remain; these are not user-facing product branding.
 ## Calendar actions from normal chat
 
 Chat routes likely calendar requests through a small application-controlled action
-handler before retrieval, memory, or Brave search. A cheap candidate gate avoids
+handler alongside bounded local retrieval and personal-assistant actions. A cheap candidate gate avoids
 extra inference for unrelated messages; the selected local Ollama model classifies
 actual event requests versus hypothetical discussions and extracts bounded JSON
 using [Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs).
@@ -593,8 +595,8 @@ The server supplies its actual current date resolved in the browser's IANA timez
 Relative/weekday dates and explicit times are resolved in application code; model
 normalization is not trusted to invent a missing date or time. Named month dates
 without a year use the next occurrence, shown for review. “Next Tuesday” uses the
-next Tuesday with an explicit review notice. Unknown dates, bare ambiguous hours,
-recurrence and explicit alternative timezones require editing the preview.
+next Tuesday with an explicit review notice. Unknown dates and bare ambiguous hours require editing the preview. Recurrence
+and the saved timezone are visible and editable in the confirmation preview.
 No duration is assumed. DST gaps and repeated times require an unambiguous time.
 The app currently uses the computer/browser timezone; there is no separate timezone
 settings screen. Drafts preserve the timezone in which they were prepared.
@@ -623,7 +625,6 @@ event. Ordinary chat retains the existing streaming, cancellation, history, mode
 selection, and internet-permission behavior. No external API is used for calendar
 classification or creation.
 
-
 ## Milestones 7–8: local attachments and bounded tool coordination
 
 Chat accepts up to four pending attachments totaling 10 MB, with image previews and removal before sending. Draft files stay in the browser until a message is submitted. Server-side validation checks format, size, and image signatures. Originals are kept without lossy resizing to preserve diagram detail; PNG dimensions above 40 megapixels are rejected. JPEG/WebP are byte bounded; model decoding can still fail. Local Ollama `/api/show` must report `vision` before image input is allowed. Remote/cloud models are rejected. No model is silently selected or downloaded. Images and message references survive restart. Select an earlier image from **Search files** to analyze it in another turn. Image OCR and interpretation can be wrong.
@@ -635,3 +636,23 @@ Retrieved documents, images, and web snippets cannot authorize tools. External q
 SQLite migrations are additive and idempotent: `documents.relativePath`, `documents.contentHash`, `message_attachments`, and `message_tool_activity`. No existing records are automatically deleted. Existing files are not rehashed during startup; deduplication applies to new uploads. Restart the local server after updating these server/schema changes; development hot reload retains the previous repository instance.
 
 See [the milestone validation report](docs/milestones-7-8.md) for tested workflows and limitations.
+
+## Personal assistant (Milestone 9)
+
+Tasks supports local projects, priorities, due dates, completion, filters, and editing.
+Calendar supports daily, weekly, selected-weekday, and monthly recurrence, with
+individual occurrence exceptions. Chat can prepare tasks, calendar events,
+reminders, and explicit memories; every mutation needs confirmation. Task and
+memory interpretation uses bounded English commands; calendar interpretation
+continues to use the selected local Ollama model. Clarify unsupported wording or
+edit the preview; this is not an autonomous planning agent.
+
+Reminders supports standalone schedules and links to timed tasks/events. In-app
+alerts run while Rebel AI is open; desktop notifications require an explicit click
+and browser permission. There is no background service or guaranteed notification
+while the browser/server is closed or the computer sleeps. Catch-up covers 24 hours,
+with at most five deliveries per poll. Settings → Memory retains local retrieval
+controls and now provides search, editing, categories, and confirmed deletion.
+
+See [Milestone 9 verification and limitations](docs/milestone-9.md) for the database,
+privacy, recurrence policies, and actual test coverage.

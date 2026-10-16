@@ -24,6 +24,8 @@ export function useMemories() {
     },
     setEnabled: (enabled: boolean) => mutation.mutateAsync(() => memories.setEnabled(enabled)),
     remove: (id: string) => mutation.mutateAsync(() => memories.remove(id)),
+    edit: (id: string, content: string, category: string, expectedUpdatedAt: string) =>
+      mutation.mutateAsync(() => memories.edit(id, content, category, expectedUpdatedAt)),
     clear: () => mutation.mutateAsync(() => memories.clear()),
   };
 }

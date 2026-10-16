@@ -21,6 +21,13 @@ async function request(path = "", method = "GET", body?: unknown, signal?: Abort
   return parsed.data;
 }
 export const memories = {
+  edit: (id: string, content: string, category: string, expectedUpdatedAt: string) =>
+    request(`/${encodeURIComponent(id)}`, "PATCH", {
+      content,
+      category,
+      expectedUpdatedAt,
+      confirmed: true,
+    }),
   list: (signal?: AbortSignal) => request("", "GET", undefined, signal),
   setEnabled: (enabled: boolean) => request("", "PATCH", { enabled }),
   remove: (id: string) => request(`/${encodeURIComponent(id)}`, "DELETE"),

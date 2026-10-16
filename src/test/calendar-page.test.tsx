@@ -4,12 +4,15 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { CalendarPage } from "@/components/calendar-page";
 import { calendar } from "@/lib/calendar";
 import type { CalendarEvent } from "@/lib/calendar-config";
-vi.mock("@/lib/calendar", () => ({ calendar: { list: vi.fn(), save: vi.fn(), remove: vi.fn() } }));
+vi.mock("@/lib/calendar", () => ({
+  calendar: { list: vi.fn(), occurrences: vi.fn(), save: vi.fn(), remove: vi.fn() },
+}));
 let records: CalendarEvent[] = [];
 const clients: QueryClient[] = [];
 beforeEach(() => {
   vi.resetAllMocks();
   records = [];
+  vi.mocked(calendar.occurrences).mockResolvedValue({ items: [], notices: [] });
   vi.mocked(calendar.list).mockImplementation(async () => [...records]);
   vi.mocked(calendar.save).mockImplementation(async (event, id) => {
     const saved = { ...event, id: id ?? crypto.randomUUID(), createdAt: "now", updatedAt: "now" };

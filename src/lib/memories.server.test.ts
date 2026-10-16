@@ -70,7 +70,9 @@ it("skips malformed records and treats malformed vectors as needing repair", () 
   const inspect = new DatabaseSync(path);
   inspect.prepare("UPDATE memories SET embedding=? WHERE id=?").run("bad JSON", good.id);
   inspect
-    .prepare("INSERT INTO memories VALUES (?,?,?,?,?,?,?,?)")
+    .prepare(
+      "INSERT INTO memories (id,content,normalized,createdAt,updatedAt,sourceConversationId,embedding,embeddingModel) VALUES (?,?,?,?,?,?,?,?)",
+    )
     .run("bad-id", "Bad", "bad", "now", "now", null, null, null);
   inspect.close();
   expect(db.memories.list()).toHaveLength(1);

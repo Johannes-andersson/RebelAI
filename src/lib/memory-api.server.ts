@@ -11,7 +11,34 @@ export async function handleMemories(
     checkLocalConversationRequest(request);
     if (id && !z.string().uuid().safeParse(id).success) throw new MemoryError("Invalid memory ID.");
     const db = (repository ?? getConversations()).memories;
-    if (request.method === "PATCH" && !id) {
+    if (request.method === "POST" && !id) {
+      const data = z
+        .object({
+          actionId: z.string().max(100),
+          decision: z.enum(["confirm", "cancel"]),
+          content: z.string().trim().min(1).max(1000).optional(),
+          category: z.string().max(80).default(""),
+          confirmed: z.literal(true),
+        })
+        .strict()
+        .safeParse(await request.json());
+      if (!data.success) throw new MemoryError("Review and confirm memory details.");
+      return Response.json(
+        db.decide(data.data.actionId, data.data.decision, data.data.content, data.data.category),
+      );
+    } else if (request.method === "PATCH" && id) {
+      const data = z
+        .object({
+          content: z.string().trim().min(1).max(1000),
+          category: z.string().max(80).default(""),
+          expectedUpdatedAt: z.string(),
+          confirmed: z.literal(true),
+        })
+        .strict()
+        .safeParse(await request.json());
+      if (!data.success) throw new MemoryError("Review valid memory details.");
+      db.edit(id, data.data.content, data.data.category, data.data.expectedUpdatedAt);
+    } else if (request.method === "PATCH" && !id) {
       const data = z
         .object({ enabled: z.boolean() })
         .safeParse(await request.json().catch(() => null));

@@ -237,6 +237,11 @@ export async function prepareCalendarAction(
       );
     }
   }
+  if (evidence === undefined && !time) {
+    const literalClock =
+      /\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)|(?:[01]?\d|2[0-3]):[0-5]\d)\b/i.exec(prompt);
+    if (literalClock) time = calendarClock(literalClock[1]!);
+  }
   const endTime = literal.endTime || calendarClock(copied(extraction.endTime));
   const draft: ActionDraft = {
     title:
@@ -264,17 +269,44 @@ export async function prepareCalendarAction(
       : []),
     ...extraction.uncertainties,
   ];
-  if (
-    /\b(or|utc|gmt|est|edt|pst|pdt|cst|cdt|mst|mdt|cet|cest|every|weekly|monthly|daily)\b|[+-]\d{2}:?\d{2}/i.test(
-      prompt,
-    )
-  ) {
+  if (/\b(or|utc|gmt|est|edt|pst|pdt|cst|cdt|mst|mdt|cet|cest)\b|[+-]\d{2}:?\d{2}/i.test(prompt)) {
     draft.date = "";
     draft.time = "";
     draft.endDate = "";
     draft.endTime = "";
     notices.push(
       "Please clarify alternatives, recurrence, or explicit time zones below. Enter one event in the displayed time zone.",
+    );
+  }
+  const recurrence = /\b(every|daily|weekly|monthly)\b/i.test(prompt);
+  if (recurrence) {
+    const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const selected = weekdays.flatMap((d, i) =>
+      new RegExp(`\\b${d}\\b`, "i").test(prompt) ? [i] : [],
+    );
+    draft.recurrence = {
+      frequency: /monthly|every month/i.test(prompt)
+        ? "monthly"
+        : /daily|every day/i.test(prompt)
+          ? "daily"
+          : "weekly",
+      weekdays: selected,
+      until: null,
+      count: null,
+    };
+    const end = /until\s+(\d{4}-\d{2}-\d{2})/i.exec(prompt);
+    if (end && validDate(end[1]!)) draft.recurrence.until = end[1]!;
+    const count = /for\s+(\d+)\s+(?:times|occurrences)/i.exec(prompt);
+    if (count) draft.recurrence.count = Number(count[1]);
+    const months = /for the next (\d+|three|two|one) months?/i.exec(prompt);
+    if (months && date) {
+      const n = Number(months[1]) || { one: 1, two: 2, three: 3 }[months[1] as "one"];
+      const d = new Date(date + "T12:00:00Z");
+      d.setUTCMonth(d.getUTCMonth() + n);
+      draft.recurrence.until = d.toISOString().slice(0, 10);
+    }
+    notices.push(
+      "Repeats in the displayed time zone. Review the end date/count. Short months and invalid DST times are skipped.",
     );
   }
   if (!date) notices.push("Which date should this event use? Enter it below.");

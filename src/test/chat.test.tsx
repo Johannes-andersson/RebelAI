@@ -486,3 +486,52 @@ it("does not silently select a fallback when a model disappears during inventory
   expect(records.get("one")?.modelTag).toBe(qwen.tag);
   expect(conversations.update).not.toHaveBeenCalled();
 });
+
+it("renders persisted memory and reminder confirmation cards", async () => {
+  const conversation = records.get("one")!;
+  conversation.messages = [
+    {
+      id: "assistant-test",
+      conversationId: "one",
+      role: "assistant",
+      content: "Review the proposed actions.",
+      status: "complete",
+      createdAt: "2026-10-15",
+      memoryAction: {
+        id: "memory-action",
+        userMessageId: "user-test",
+        operation: "create",
+        targetId: null,
+        expectedUpdatedAt: null,
+        content: "Synthetic preference",
+        category: "",
+        status: "pending",
+        createdAt: "2026-10-15",
+        resultId: null,
+      },
+      reminderAction: {
+        id: "reminder-action",
+        userMessageId: "user-test",
+        status: "saved",
+        createdAt: "2026-10-15",
+        resultId: "synthetic",
+        draft: {
+          title: "Test reminder",
+          dueAt: "2026-10-16T12:00:00Z",
+          timeZone: "UTC",
+          targetKind: "standalone",
+          targetId: null,
+          leadMinutes: 0,
+          enabled: true,
+          recurrence: null,
+        },
+      },
+    },
+  ];
+  view();
+  await ready();
+  expect(await screen.findByRole("button", { name: "Confirm memory" })).toBeInTheDocument();
+  expect(
+    screen.getByText("Reminder scheduled locally; delivery requires Rebel AI to be running."),
+  ).toBeInTheDocument();
+});

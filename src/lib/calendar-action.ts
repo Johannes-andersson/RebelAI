@@ -1,8 +1,10 @@
+import { recurrenceSchema } from "./recurrence";
 import { z } from "zod";
 import { eventInputSchema } from "./calendar-config";
 import { validTimeZone, zonedInstant } from "./calendar-time";
 export const actionDraftSchema = z
   .object({
+    recurrence: recurrenceSchema.nullable().optional(),
     title: z.string().max(200),
     description: z.string().max(4000),
     location: z.string().max(500),
@@ -38,6 +40,8 @@ export function actionEvent(draft: ActionDraft, timeZone: string) {
   if (!draft.allDay && !!draft.endDate !== !!draft.endTime)
     throw new Error("Provide both the end date and time, or leave both empty.");
   const parsed = eventInputSchema.safeParse({
+    recurrence: draft.recurrence ?? null,
+    timeZone,
     title: draft.title,
     description: draft.description,
     location: draft.location,

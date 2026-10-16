@@ -45,9 +45,12 @@ export interface ChatMessage {
 export interface StoredMessage extends ChatMessage {
   activity?: import("./tool-plan").ToolActivity[] | undefined;
   attachments?: import("./document-config").AttachedDocument[] | undefined;
+  reminderAction?: import("./reminder-config").ReminderAction | undefined;
+  taskAction?: import("./task-config").TaskAction | undefined;
   calendarAction?: import("./calendar-action").CalendarAction | undefined;
   performance?: import("./generation-config").GenerationPerformance | undefined;
   webSearch?: import("./web-search").WebSearch | undefined;
+  memoryAction?: import("./memory-config").MemoryAction | undefined;
   memoryUsed?: boolean | undefined;
   sources?: import("./document-config").DocumentSource[] | undefined;
   conversationId: string;

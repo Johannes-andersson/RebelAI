@@ -1,3 +1,6 @@
+import { ChatMemoryAction } from "@/components/chat-memory-action";
+import { ChatReminderAction } from "@/components/reminders-page";
+import { ChatTaskAction } from "@/components/chat-task-action";
 import { documentAnswerText } from "@/lib/document-config";
 import type { StoredMessage } from "@/lib/types";
 import { AttachmentComposer } from "@/components/attachment-composer";
@@ -348,6 +351,19 @@ function ChatSession({
                           </button>
                         )}
                     </div>
+                    {m.memoryAction && (
+                      <ChatMemoryAction key={`memory:${m.id}`} action={m.memoryAction} />
+                    )}
+                    {m.reminderAction && (
+                      <ChatReminderAction key={`reminder:${m.id}`} action={m.reminderAction} />
+                    )}
+                    {m.taskAction && (
+                      <ChatTaskAction
+                        key={`task:${m.id}`}
+                        action={m.taskAction}
+                        disabled={chat.pending}
+                      />
+                    )}
                     {m.calendarAction && (
                       <ChatCalendarAction
                         key={m.calendarAction.id}

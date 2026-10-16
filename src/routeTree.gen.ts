@@ -14,7 +14,9 @@ import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as ModelsRouteImport } from './routes/models'
+import { Route as RemindersRouteImport } from './routes/reminders'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as ApiCalendarRouteImport } from './routes/api.calendar'
 import { Route as ApiChatRouteImport } from './routes/api.chat'
 import { Route as ApiConversationsRouteImport } from './routes/api.conversations'
@@ -24,7 +26,9 @@ import { Route as ApiInternetRouteImport } from './routes/api.internet'
 import { Route as ApiMemoriesRouteImport } from './routes/api.memories'
 import { Route as ApiModelSettingsRouteImport } from './routes/api.model-settings'
 import { Route as ApiModelsRouteImport } from './routes/api.models'
+import { Route as ApiRemindersRouteImport } from './routes/api.reminders'
 import { Route as ApiSystemRouteImport } from './routes/api.system'
+import { Route as ApiTasksRouteImport } from './routes/api.tasks'
 import { Route as ApiConversationsIdRouteImport } from './routes/api.conversations.$id'
 import { Route as ApiMemoriesIdRouteImport } from './routes/api.memories.$id'
 import { Route as ApiModelsPullRouteImport } from './routes/api.models.pull'
@@ -56,9 +60,19 @@ const ModelsRoute = ModelsRouteImport.update({
   path: '/models',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RemindersRoute = RemindersRouteImport.update({
+  id: '/reminders',
+  path: '/reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TasksRoute = TasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCalendarRoute = ApiCalendarRouteImport.update({
@@ -106,9 +120,19 @@ const ApiModelsRoute = ApiModelsRouteImport.update({
   path: '/api/models',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRemindersRoute = ApiRemindersRouteImport.update({
+  id: '/api/reminders',
+  path: '/api/reminders',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSystemRoute = ApiSystemRouteImport.update({
   id: '/api/system',
   path: '/api/system',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTasksRoute = ApiTasksRouteImport.update({
+  id: '/api/tasks',
+  path: '/api/tasks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiConversationsIdRoute = ApiConversationsIdRouteImport.update({
@@ -145,7 +169,9 @@ export interface FileRoutesByFullPath {
   '/chat': typeof ChatRoute
   '/files': typeof FilesRoute
   '/models': typeof ModelsRoute
+  '/reminders': typeof RemindersRoute
   '/settings': typeof SettingsRoute
+  '/tasks': typeof TasksRoute
   '/api/calendar': typeof ApiCalendarRoute
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
@@ -155,7 +181,9 @@ export interface FileRoutesByFullPath {
   '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/model-settings': typeof ApiModelSettingsRoute
   '/api/models': typeof ApiModelsRouteWithChildren
+  '/api/reminders': typeof ApiRemindersRoute
   '/api/system': typeof ApiSystemRoute
+  '/api/tasks': typeof ApiTasksRoute
   '/api/conversations/$id': typeof ApiConversationsIdRouteWithChildren
   '/api/memories/$id': typeof ApiMemoriesIdRoute
   '/api/models/pull': typeof ApiModelsPullRoute
@@ -168,7 +196,9 @@ export interface FileRoutesByTo {
   '/chat': typeof ChatRoute
   '/files': typeof FilesRoute
   '/models': typeof ModelsRoute
+  '/reminders': typeof RemindersRoute
   '/settings': typeof SettingsRoute
+  '/tasks': typeof TasksRoute
   '/api/calendar': typeof ApiCalendarRoute
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
@@ -178,7 +208,9 @@ export interface FileRoutesByTo {
   '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/model-settings': typeof ApiModelSettingsRoute
   '/api/models': typeof ApiModelsRouteWithChildren
+  '/api/reminders': typeof ApiRemindersRoute
   '/api/system': typeof ApiSystemRoute
+  '/api/tasks': typeof ApiTasksRoute
   '/api/conversations/$id': typeof ApiConversationsIdRouteWithChildren
   '/api/memories/$id': typeof ApiMemoriesIdRoute
   '/api/models/pull': typeof ApiModelsPullRoute
@@ -192,7 +224,9 @@ export interface FileRoutesById {
   '/chat': typeof ChatRoute
   '/files': typeof FilesRoute
   '/models': typeof ModelsRoute
+  '/reminders': typeof RemindersRoute
   '/settings': typeof SettingsRoute
+  '/tasks': typeof TasksRoute
   '/api/calendar': typeof ApiCalendarRoute
   '/api/chat': typeof ApiChatRoute
   '/api/conversations': typeof ApiConversationsRouteWithChildren
@@ -202,7 +236,9 @@ export interface FileRoutesById {
   '/api/memories': typeof ApiMemoriesRouteWithChildren
   '/api/model-settings': typeof ApiModelSettingsRoute
   '/api/models': typeof ApiModelsRouteWithChildren
+  '/api/reminders': typeof ApiRemindersRoute
   '/api/system': typeof ApiSystemRoute
+  '/api/tasks': typeof ApiTasksRoute
   '/api/conversations/$id': typeof ApiConversationsIdRouteWithChildren
   '/api/memories/$id': typeof ApiMemoriesIdRoute
   '/api/models/pull': typeof ApiModelsPullRoute
@@ -217,7 +253,9 @@ export interface FileRouteTypes {
     | '/chat'
     | '/files'
     | '/models'
+    | '/reminders'
     | '/settings'
+    | '/tasks'
     | '/api/calendar'
     | '/api/chat'
     | '/api/conversations'
@@ -227,7 +265,9 @@ export interface FileRouteTypes {
     | '/api/memories'
     | '/api/model-settings'
     | '/api/models'
+    | '/api/reminders'
     | '/api/system'
+    | '/api/tasks'
     | '/api/conversations/$id'
     | '/api/memories/$id'
     | '/api/models/pull'
@@ -240,7 +280,9 @@ export interface FileRouteTypes {
     | '/chat'
     | '/files'
     | '/models'
+    | '/reminders'
     | '/settings'
+    | '/tasks'
     | '/api/calendar'
     | '/api/chat'
     | '/api/conversations'
@@ -250,7 +292,9 @@ export interface FileRouteTypes {
     | '/api/memories'
     | '/api/model-settings'
     | '/api/models'
+    | '/api/reminders'
     | '/api/system'
+    | '/api/tasks'
     | '/api/conversations/$id'
     | '/api/memories/$id'
     | '/api/models/pull'
@@ -263,7 +307,9 @@ export interface FileRouteTypes {
     | '/chat'
     | '/files'
     | '/models'
+    | '/reminders'
     | '/settings'
+    | '/tasks'
     | '/api/calendar'
     | '/api/chat'
     | '/api/conversations'
@@ -273,7 +319,9 @@ export interface FileRouteTypes {
     | '/api/memories'
     | '/api/model-settings'
     | '/api/models'
+    | '/api/reminders'
     | '/api/system'
+    | '/api/tasks'
     | '/api/conversations/$id'
     | '/api/memories/$id'
     | '/api/models/pull'
@@ -287,7 +335,9 @@ export interface RootRouteChildren {
   ChatRoute: typeof ChatRoute
   FilesRoute: typeof FilesRoute
   ModelsRoute: typeof ModelsRoute
+  RemindersRoute: typeof RemindersRoute
   SettingsRoute: typeof SettingsRoute
+  TasksRoute: typeof TasksRoute
   ApiCalendarRoute: typeof ApiCalendarRoute
   ApiChatRoute: typeof ApiChatRoute
   ApiConversationsRoute: typeof ApiConversationsRouteWithChildren
@@ -297,7 +347,9 @@ export interface RootRouteChildren {
   ApiMemoriesRoute: typeof ApiMemoriesRouteWithChildren
   ApiModelSettingsRoute: typeof ApiModelSettingsRoute
   ApiModelsRoute: typeof ApiModelsRouteWithChildren
+  ApiRemindersRoute: typeof ApiRemindersRoute
   ApiSystemRoute: typeof ApiSystemRoute
+  ApiTasksRoute: typeof ApiTasksRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -337,11 +389,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ModelsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reminders': {
+      id: '/reminders'
+      path: '/reminders'
+      fullPath: '/reminders'
+      preLoaderRoute: typeof RemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tasks': {
+      id: '/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof TasksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/calendar': {
@@ -407,11 +473,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiModelsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/reminders': {
+      id: '/api/reminders'
+      path: '/api/reminders'
+      fullPath: '/api/reminders'
+      preLoaderRoute: typeof ApiRemindersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/system': {
       id: '/api/system'
       path: '/api/system'
       fullPath: '/api/system'
       preLoaderRoute: typeof ApiSystemRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/tasks': {
+      id: '/api/tasks'
+      path: '/api/tasks'
+      fullPath: '/api/tasks'
+      preLoaderRoute: typeof ApiTasksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/conversations/$id': {
@@ -520,7 +600,9 @@ const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRoute,
   FilesRoute: FilesRoute,
   ModelsRoute: ModelsRoute,
+  RemindersRoute: RemindersRoute,
   SettingsRoute: SettingsRoute,
+  TasksRoute: TasksRoute,
   ApiCalendarRoute: ApiCalendarRoute,
   ApiChatRoute: ApiChatRoute,
   ApiConversationsRoute: ApiConversationsRouteWithChildren,
@@ -530,7 +612,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMemoriesRoute: ApiMemoriesRouteWithChildren,
   ApiModelSettingsRoute: ApiModelSettingsRoute,
   ApiModelsRoute: ApiModelsRouteWithChildren,
+  ApiRemindersRoute: ApiRemindersRoute,
   ApiSystemRoute: ApiSystemRoute,
+  ApiTasksRoute: ApiTasksRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -253,3 +253,57 @@ it("deduplicates a repeated identical request from a different conversation", ()
     db.close();
   }
 });
+
+it("persists recurrence exceptions and clears them when the series changes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rebel-recurring-")),
+    path = join(dir, "test.sqlite");
+  let db = new ConversationRepository(path);
+  try {
+    const input = {
+      ...event,
+      startsAt: "2026-03-02T14:00:00.000Z",
+      timeZone: "America/New_York",
+      recurrence: { frequency: "weekly" as const, weekdays: [1], until: null, count: 4 },
+    };
+    const saved = db.calendar.save(input);
+    db.calendar.exception(saved.id, "2026-03-09", null);
+    db.calendar.exception(saved.id, "2026-03-16", {
+      ...input,
+      title: "Changed occurrence",
+      startsAt: "2026-03-16T15:00:00.000Z",
+      recurrence: null,
+    });
+    db.close();
+    db = new ConversationRepository(path);
+    const list = db.calendar.occurrences("2026-03-01", "2026-04-01").items;
+    expect(list).toHaveLength(3);
+    expect(list.some((e) => e.title === "Changed occurrence")).toBe(true);
+    db.calendar.save({ ...input, title: "New series" }, saved.id);
+    expect(db.calendar.occurrences("2026-03-01", "2026-04-01").items).toHaveLength(4);
+    db.calendar.delete(saved.id);
+    expect(db.calendar.occurrences("2026-03-01", "2026-04-01").items).toEqual([]);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("does not revive a cancelled calendar draft after regeneration", () => {
+  const db = new ConversationRepository(":memory:");
+  try {
+    const a = stage(db);
+    db.calendar.decideAction(a.id, "cancel");
+    const next = randomUUID();
+    db.reviseTurn(
+      a.conversation,
+      next,
+      { kind: "regenerate", userMessageId: a.user, expectedTailId: a.id },
+      "Remind me to call Mom",
+      "qwen2.5:7b",
+    );
+    db.calendar.stageAction(`${next}:assistant`, a.user, { draft, timeZone: "UTC", notices: [] });
+    expect(db.calendar.action(`${next}:assistant`)?.status).toBe("cancelled");
+    expect(db.calendar.list()).toEqual([]);
+  } finally {
+    db.close();
+  }
+});

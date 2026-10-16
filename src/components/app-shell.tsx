@@ -1,3 +1,4 @@
+import { NotificationIndicator } from "./notification-indicator";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -22,6 +23,7 @@ const nav = [
   { to: "/chat", label: "Chats" },
   { to: "/models", label: "Models" },
   { to: "/files", label: "Files" },
+  { to: "/tasks", label: "Tasks" },
   { to: "/calendar", label: "Calendar" },
   { to: "/settings", label: "Settings" },
 ] as const;
@@ -161,6 +163,7 @@ export function AppShell({ children, onNewChat }: { children: ReactNode; onNewCh
             </li>
           ))}
         </ul>
+        <NotificationIndicator />
         <div className="mt-auto flex items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-sm">
           <StatusDot tone={running ? "success" : "muted"} />
           {running ? "Local model selected" : "No model selected"}

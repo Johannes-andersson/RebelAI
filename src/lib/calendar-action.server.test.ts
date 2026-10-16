@@ -229,3 +229,18 @@ it("matches reformatted dates and times to literal document evidence", async () 
   );
   expect(result?.draft).toMatchObject({ date: "2026-10-20", time: "15:00" });
 });
+
+it("preserves literal recurring time even when the local model omits it", async () => {
+  model({ ...blank, title: "Team meeting", dateExpression: "Monday", startTime: "" });
+  const result = await prepareCalendarAction(
+    "Schedule a team meeting every Monday at 9 AM.",
+    "qwen2.5:7b",
+    "America/El_Salvador",
+    signal(),
+    now,
+  );
+  expect(result?.draft).toMatchObject({
+    time: "09:00",
+    recurrence: { frequency: "weekly", weekdays: [1] },
+  });
+});

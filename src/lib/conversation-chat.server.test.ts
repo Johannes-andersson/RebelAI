@@ -192,7 +192,10 @@ it("acknowledges explicit memory only after durable storage and uses it in a sep
     request(randomUUID(), "Remember that Rebel AI is my main project."),
     db,
   );
-  expect(await first.text()).toContain("I’ll remember");
+  expect(await first.text()).toContain("Review this memory");
+  expect(db.memories.list()).toHaveLength(0);
+  const preview = db.get(id).messages[1]!.memoryAction!;
+  db.memories.decide(preview.id, "confirm", preview.content, preview.category);
   expect(handleOllamaChat).not.toHaveBeenCalled();
   expect(db.memories.list()[0]?.content).toBe("Rebel AI is my main project.");
   const original = id;

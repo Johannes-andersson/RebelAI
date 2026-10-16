@@ -1,3 +1,5 @@
+import { ReminderRepository } from "./reminders.server";
+import { TaskRepository } from "./tasks.server";
 import { ToolActivityRepository } from "./tool-activity.server";
 import { CalendarRepository } from "./calendar.server";
 import { GenerationRepository } from "./generation-settings.server";
@@ -39,6 +41,14 @@ export class ConversationRepository {
   get activity() {
     return (this.activityRepository ??= new ToolActivityRepository(this.db));
   }
+  private reminderRepository?: ReminderRepository;
+  get reminders() {
+    return (this.reminderRepository ??= new ReminderRepository(this.db, this));
+  }
+  private taskRepository?: TaskRepository;
+  get tasks() {
+    return (this.taskRepository ??= new TaskRepository(this.db));
+  }
   private calendarRepository?: CalendarRepository;
   get calendar() {
     return (this.calendarRepository ??= new CalendarRepository(this.db));
@@ -61,6 +71,13 @@ export class ConversationRepository {
   private memoryRepository?: MemoryRepository;
   get memories() {
     return (this.memoryRepository ??= new MemoryRepository(this.db));
+  }
+  private memoryAction(id: string) {
+    try {
+      return this.memories.action(id);
+    } catch {
+      return undefined;
+    }
   }
   private memoryUsed(id: string) {
     try {
@@ -140,9 +157,12 @@ export class ConversationRepository {
         attachments: this.documents.attachments(m.id),
         sources: this.documents.sources(m.id),
         memoryUsed: this.memoryUsed(m.id),
+        memoryAction: this.memoryAction(m.id),
         webSearch: this.webSearch(m.id),
         performance: this.generation.performance(m.id),
         calendarAction: this.calendar.action(m.id),
+        taskAction: this.tasks.action(m.id),
+        reminderAction: this.reminders.action(m.id),
       })),
     };
   }

@@ -1,3 +1,4 @@
+import { expandEvents } from "./recurrence";
 import {
   actionEvent,
   calendarActionSchema,
@@ -29,6 +30,21 @@ export class CalendarRepository {
         .some((c) => c["name"] === "location")
     )
       db.exec("ALTER TABLE calendar_events ADD COLUMN location TEXT NOT NULL DEFAULT ''");
+    for (const [name, definition] of [
+      ["recurrence", "TEXT"],
+      ["timeZone", "TEXT NOT NULL DEFAULT 'UTC'"],
+    ]) {
+      if (
+        !db
+          .prepare("PRAGMA table_info(calendar_events)")
+          .all()
+          .some((c) => c["name"] === name)
+      )
+        db.exec(`ALTER TABLE calendar_events ADD COLUMN ${name} ${definition}`);
+    }
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS calendar_exceptions (seriesId TEXT NOT NULL REFERENCES calendar_events(id) ON DELETE CASCADE, date TEXT NOT NULL, data TEXT, PRIMARY KEY(seriesId,date));`,
+    );
     db.exec(`CREATE TABLE IF NOT EXISTS calendar_actions (
       messageId TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS calendar_action_receipts (
@@ -38,14 +54,35 @@ export class CalendarRepository {
     return this.db
       .prepare("SELECT * FROM calendar_events ORDER BY startsAt,id")
       .all()
-      .map((row) => ({ ...row, allDay: !!row["allDay"] })) as CalendarEvent[];
+      .map((row) => ({
+        ...row,
+        recurrence: row["recurrence"] ? JSON.parse(String(row["recurrence"])) : null,
+        allDay: !!row["allDay"],
+      })) as CalendarEvent[];
   }
   save(input: EventInput, id?: string) {
+    this.db.exec("SAVEPOINT calendar_save");
+    try {
+      const result = this.saveEvent(input, id);
+      this.db.exec("RELEASE calendar_save");
+      return result;
+    } catch (e) {
+      this.db.exec("ROLLBACK TO calendar_save; RELEASE calendar_save");
+      throw e;
+    }
+  }
+  private saveEvent(input: EventInput, id?: string) {
     const data = eventInputSchema.parse(input);
     if (!data.allDay) {
       data.startsAt = new Date(data.startsAt).toISOString();
       if (data.endsAt) data.endsAt = new Date(data.endsAt).toISOString();
     }
+    if (data.recurrence)
+      expandEvents(
+        [{ ...data, id: id ?? randomUUID(), createdAt: "", updatedAt: "" }],
+        data.allDay ? data.startsAt : data.startsAt.slice(0, 10),
+        data.allDay ? data.startsAt : data.startsAt.slice(0, 10),
+      );
     const now = new Date().toISOString();
     const eventId = id ?? randomUUID();
     if (id) {
@@ -84,7 +121,43 @@ export class CalendarRepository {
           now,
           data.location ?? "",
         );
+    this.db
+      .prepare("UPDATE calendar_events SET recurrence=?,timeZone=? WHERE id=?")
+      .run(
+        data.recurrence ? JSON.stringify(data.recurrence) : null,
+        data.timeZone ?? "UTC",
+        eventId,
+      );
+    if (id) this.db.prepare("DELETE FROM calendar_exceptions WHERE seriesId=?").run(id);
     return this.list().find((e) => e.id === eventId)!;
+  }
+  occurrences(from: string, to: string) {
+    const exceptions: Record<string, CalendarEvent | null> = {};
+    for (const row of this.db.prepare("SELECT * FROM calendar_exceptions").all())
+      exceptions[`${row["seriesId"]}/${row["date"]}`] = row["data"]
+        ? JSON.parse(String(row["data"]))
+        : null;
+    return expandEvents(this.list(), from, to, exceptions);
+  }
+  exception(id: string, date: string, input: EventInput | null) {
+    const series = this.list().find((e) => e.id === id);
+    if (!series?.recurrence || !expandEvents([series], date, date).items.length)
+      throw new ConversationError("This occurrence does not exist.", 400);
+    const value = input
+      ? {
+          ...eventInputSchema.parse(input),
+          recurrence: null,
+          id,
+          createdAt: series.createdAt,
+          updatedAt: new Date().toISOString(),
+        }
+      : null;
+    this.db
+      .prepare(
+        "INSERT INTO calendar_exceptions VALUES (?,?,?) ON CONFLICT(seriesId,date) DO UPDATE SET data=excluded.data",
+      )
+      .run(id, date, value ? JSON.stringify(value) : null);
+    return value;
   }
   action(messageId: string): CalendarAction | undefined {
     const row = this.db
@@ -121,7 +194,9 @@ export class CalendarRepository {
       const text =
         action.status === "saved"
           ? "This request already saved a calendar event. No duplicate was created. No automatic alert is scheduled."
-          : "Review the calendar event below. Complete any missing details, then confirm to save it. No automatic alert will be sent.";
+          : action.status === "cancelled"
+            ? "This calendar request was cancelled. No event was created."
+            : "Review the calendar event below. Complete any missing details, then confirm to save it. No automatic alert will be sent.";
       if (
         !this.db
           .prepare(
@@ -159,8 +234,12 @@ export class CalendarRepository {
         this.db.exec("COMMIT");
         return action;
       }
-      if (decision === "cancel") action.status = "cancelled";
-      else {
+      if (decision === "cancel") {
+        action.status = "cancelled";
+        this.db
+          .prepare("INSERT OR IGNORE INTO calendar_action_receipts VALUES (?,?)")
+          .run(action.userMessageId, JSON.stringify(action));
+      } else {
         if (Date.now() - Date.parse(action.createdAt) > 24 * 60 * 60 * 1000)
           throw new ConversationError(
             "This preview has expired. Send a new request so relative dates can be checked again.",
@@ -191,6 +270,7 @@ export class CalendarRepository {
             event.startsAt === input.startsAt &&
             event.endsAt === input.endsAt &&
             event.allDay === input.allDay &&
+            JSON.stringify(event.recurrence ?? null) === JSON.stringify(input.recurrence ?? null) &&
             event.description === input.description &&
             (event.location ?? "") === (input.location ?? ""),
         );
@@ -233,9 +313,25 @@ export async function handleCalendar(request: Request, repository?: Conversation
       throw new ConversationError("Invalid event ID.", 400);
     const db = (repository ?? getConversations()).calendar;
     let result: unknown;
-    if (request.method === "GET" && !id) result = db.list();
-    else if ((request.method === "POST" && !id) || (request.method === "PATCH" && id)) {
+    if (request.method === "GET" && !id) {
+      const url = new URL(request.url),
+        from = url.searchParams.get("from"),
+        to = url.searchParams.get("to");
+      result = from && to ? db.occurrences(from, to) : db.list();
+    } else if ((request.method === "POST" && !id) || (request.method === "PATCH" && id)) {
       const body = await request.json().catch(() => null);
+      if (id && body && "occurrenceDate" in body) {
+        const parsed = z
+          .object({
+            confirmed: z.literal(true),
+            occurrenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+            event: eventInputSchema.nullable(),
+          })
+          .strict()
+          .safeParse(body);
+        if (!parsed.success) throw new ConversationError("Review occurrence details.", 400);
+        return Response.json(db.exception(id, parsed.data.occurrenceDate, parsed.data.event));
+      }
       if (request.method === "POST" && body && typeof body === "object" && "actionId" in body) {
         const decision = calendarDecisionSchema.safeParse(body);
         if (!decision.success)

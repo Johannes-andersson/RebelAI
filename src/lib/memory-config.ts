@@ -9,6 +9,7 @@ export const memoryLimits = {
   indexBatch: 8,
 };
 export const memorySchema = z.object({
+  category: z.string().max(80).optional(),
   id: z.string().uuid(),
   content: z.string().trim().min(1).max(memoryLimits.characters),
   createdAt: z.string(),
@@ -45,3 +46,27 @@ export function validVector(value: unknown): value is number[] {
     value.some((n) => n !== 0)
   );
 }
+
+export function assertSafeMemory(content: string) {
+  if (
+    /\b(password|passphrase|api[ _-]?key|access[ _-]?token|private[ _-]?key|secret|credential)\b|\b(?:sk-|ghp_|github_pat_|xox[baprs]-)[A-Za-z0-9_-]{8,}|-----BEGIN|\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./i.test(
+      content,
+    )
+  )
+    throw new MemoryError(
+      "Passwords, credentials, tokens and secrets cannot be saved as memories.",
+    );
+}
+export const memoryActionSchema = z.object({
+  id: z.string(),
+  userMessageId: z.string(),
+  operation: z.enum(["create", "update", "delete"]),
+  targetId: z.string().uuid().nullable(),
+  expectedUpdatedAt: z.string().nullable(),
+  content: z.string().trim().min(1).max(1000),
+  category: z.string().trim().max(80),
+  status: z.enum(["pending", "saved", "cancelled"]),
+  createdAt: z.string(),
+  resultId: z.string().nullable(),
+});
+export type MemoryAction = z.infer<typeof memoryActionSchema>;

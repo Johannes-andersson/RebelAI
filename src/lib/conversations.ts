@@ -1,3 +1,6 @@
+import { memoryActionSchema } from "./memory-config";
+import { reminderActionSchema } from "./reminder-config";
+import { taskActionSchema } from "./task-config";
 import { toolActivitySchema } from "./tool-plan";
 import { calendarActionSchema } from "./calendar-action";
 import { performanceSchema } from "./generation-config";
@@ -24,7 +27,10 @@ const conversationSchema = summarySchema.extend({
       status: z.enum(["pending", "complete", "interrupted", "error"]),
       webSearch: webSearchSchema.optional(),
       performance: performanceSchema.optional(),
+      memoryAction: memoryActionSchema.optional(),
       memoryUsed: z.boolean().optional(),
+      reminderAction: reminderActionSchema.optional(),
+      taskAction: taskActionSchema.optional(),
       calendarAction: calendarActionSchema.optional(),
       sources: sourceSchema.array().optional(),
       attachments: documentSchema.array().optional(),

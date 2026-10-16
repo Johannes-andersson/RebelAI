@@ -1,3 +1,4 @@
+import { RecurrenceFields } from "./recurrence-fields";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { calendar } from "@/lib/calendar";
@@ -22,6 +23,14 @@ import {
 export function CalendarPage() {
   const client = useQueryClient();
   const events = useQuery({ queryKey: ["calendar"], queryFn: calendar.list, retry: false });
+  const [windowStart, setWindowStart] = useState(() => localDate(new Date()));
+  const windowEnd = new Date(Date.parse(windowStart) + 90 * 86400000).toISOString().slice(0, 10);
+  const occurrences = useQuery({
+    queryKey: ["calendar", "occurrences", windowStart],
+    queryFn: () => calendar.occurrences(windowStart, windowEnd),
+    retry: false,
+  });
+  const [occurrenceDate, setOccurrenceDate] = useState<string | null>(null);
   const [draft, setDraft] = useState<EventDraft | null>(null);
   const [editing, setEditing] = useState<string | undefined>();
   const [description, setDescription] = useState("");
@@ -31,7 +40,12 @@ export function CalendarPage() {
   const [deleting, setDeleting] = useState<CalendarEvent | null>(null);
   const [showPast, setShowPast] = useState(false);
   const today = localDate(new Date());
-  const visible = events.data?.filter(
+  const visible = [
+    ...(events.data ?? []).filter((e) => !e.recurrence),
+    ...(occurrences.data?.items ?? []).filter((e) =>
+      events.data?.some((series) => series.id === e.seriesId && series.recurrence),
+    ),
+  ].filter(
     (e) =>
       showPast ||
       (e.allDay
@@ -45,7 +59,10 @@ export function CalendarPage() {
     setBusy(true);
     setError(null);
     try {
-      await calendar.save(draftInput(draft), editing);
+      if (occurrenceDate && editing)
+        await calendar.exception(editing, occurrenceDate, draftInput(draft));
+      else await calendar.save(draftInput(draft), editing);
+      setOccurrenceDate(null);
       setDraft(null);
       setDescription("");
       await client.invalidateQueries({ queryKey: ["calendar"] });
@@ -60,7 +77,9 @@ export function CalendarPage() {
     setBusy(true);
     setError(null);
     try {
-      await calendar.remove(deleting.id);
+      if (occurrenceDate) await calendar.exception(deleting.id, occurrenceDate, null);
+      else await calendar.remove(deleting.id);
+      setOccurrenceDate(null);
       if (editing === deleting.id) setDraft(null);
       setDeleting(null);
       await client.invalidateQueries({ queryKey: ["calendar"] });
@@ -74,8 +93,24 @@ export function CalendarPage() {
     <div className="flex-1 overflow-y-auto p-10 space-y-6">
       <p className="text-sm text-muted-foreground">
         Saved only on this computer. Times use {Intl.DateTimeFormat().resolvedOptions().timeZone}.
-        No notifications, recurring events, or calendar sync.
+        Recurring times retain their saved timezone. No external calendar sync.
       </p>
+      <label>
+        Recurring window (90 days)
+        <input
+          type="date"
+          value={windowStart}
+          onChange={(e) => {
+            if (e.target.value) setWindowStart(e.target.value);
+          }}
+        />
+      </label>
+      {occurrences.data?.notices.map((n) => (
+        <p key={n} role="status">
+          {n}
+        </p>
+      ))}
+      {occurrences.error && <p role="alert">{occurrences.error.message}</p>}
       <section
         className="rounded-xl border border-border bg-panel p-5 space-y-3"
         aria-label="Describe an event"
@@ -100,6 +135,7 @@ export function CalendarPage() {
           disabled={!description.trim() || busy || !!draft}
           onClick={() => {
             const result = describeEvent(description);
+            setOccurrenceDate(null);
             setDraft(result.draft);
             setNotices(result.notices);
             setEditing(undefined);
@@ -112,6 +148,7 @@ export function CalendarPage() {
           className="btn-primary ml-2"
           disabled={busy || !!draft}
           onClick={() => {
+            setOccurrenceDate(null);
             setDraft(emptyDraft());
             setEditing(undefined);
             setNotices([]);
@@ -227,6 +264,20 @@ export function CalendarPage() {
                 </label>
               )}
             </div>
+            {!occurrenceDate && (
+              <RecurrenceFields
+                value={draft.recurrence}
+                onChange={(recurrence) => setDraft({ ...draft, recurrence })}
+              />
+            )}
+            <label>
+              Time zone
+              <input
+                className="ml-2 bg-background p-2"
+                value={draft.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone}
+                onChange={(e) => setDraft({ ...draft, timeZone: e.target.value })}
+              />
+            </label>
             <p className="text-xs text-muted-foreground">
               Leaving the end empty saves an event without a duration. Check times carefully near
               daylight-saving changes.
@@ -281,19 +332,56 @@ export function CalendarPage() {
             {event.description && (
               <p className="mt-2 whitespace-pre-wrap text-sm">{event.description}</p>
             )}
-            <div className="mt-3 flex gap-3">
+            <div className="mt-3 flex gap-3 flex-wrap">
+              {event.recurrence && "seriesId" in event && "occurrenceDate" in event && (
+                <>
+                  <button
+                    className="link-quiet"
+                    onClick={() => {
+                      setDraft({ ...eventDraft(event), recurrence: null });
+                      setEditing(String(event.seriesId));
+                      setOccurrenceDate(String(event.occurrenceDate));
+                    }}
+                  >
+                    Edit this occurrence
+                  </button>
+                  <button
+                    className="link-quiet"
+                    onClick={() => {
+                      setDeleting({ ...event, id: String(event.seriesId) });
+                      setOccurrenceDate(String(event.occurrenceDate));
+                    }}
+                  >
+                    Delete this occurrence
+                  </button>
+                  <button disabled title="Not supported safely yet">
+                    Edit this and future (unavailable)
+                  </button>
+                </>
+              )}
               <button
                 className="link-quiet"
                 disabled={busy || !!draft}
                 aria-label={`Edit ${event.title}`}
                 onClick={() => {
-                  setDraft(eventDraft(event));
-                  setEditing(event.id);
-                  setNotices([]);
+                  const base =
+                    events.data?.find(
+                      (e) => e.id === ("seriesId" in event ? event.seriesId : event.id),
+                    ) ?? event;
+                  setDraft(eventDraft(base));
+                  setEditing(base.id);
+                  setOccurrenceDate(null);
+                  setNotices(
+                    base.recurrence
+                      ? [
+                          "Editing the entire series resets its individual occurrence edits and cancellations. Review before saving.",
+                        ]
+                      : [],
+                  );
                   setError(null);
                 }}
               >
-                Edit
+                {event.recurrence ? "Edit entire series" : "Edit"}
               </button>
               <button
                 className="link-quiet"
@@ -301,10 +389,15 @@ export function CalendarPage() {
                 aria-label={`Delete ${event.title}`}
                 onClick={() => {
                   setError(null);
-                  setDeleting(event);
+                  setDeleting(
+                    events.data?.find(
+                      (e) => e.id === ("seriesId" in event ? event.seriesId : event.id),
+                    ) ?? event,
+                  );
+                  setOccurrenceDate(null);
                 }}
               >
-                Delete
+                {event.recurrence ? "Delete entire series" : "Delete"}
               </button>
             </div>
           </article>
@@ -319,7 +412,13 @@ export function CalendarPage() {
         <AlertDialogContent>
           <AlertDialogTitle>Delete event?</AlertDialogTitle>
           <AlertDialogDescription>
-            Delete “{deleting?.title}” from this computer? This cannot be undone.
+            Delete{" "}
+            {occurrenceDate
+              ? `the occurrence on ${occurrenceDate}`
+              : deleting?.recurrence
+                ? "the entire series"
+                : "the event"}{" "}
+            “{deleting?.title}” from this computer? This cannot be undone.
           </AlertDialogDescription>
           {error && <p role="alert">{error}</p>}
           <AlertDialogFooter>

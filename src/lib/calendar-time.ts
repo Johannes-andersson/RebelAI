@@ -1,4 +1,4 @@
-import { validDate } from "./calendar-config";
+import { validDate } from "./calendar-date";
 export function validTimeZone(zone: string) {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: zone }).format();

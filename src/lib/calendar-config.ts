@@ -1,14 +1,13 @@
+import { recurrenceSchema, zoneSchema, type Recurrence } from "./recurrence";
+import { zonedInstant, zonedParts } from "./calendar-time";
 import { z } from "zod";
 
-export function validDate(value: string) {
-  return (
-    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-    !Number.isNaN(Date.parse(value)) &&
-    new Date(value).toISOString().slice(0, 10) === value
-  );
-}
+import { validDate } from "./calendar-date";
+export { validDate } from "./calendar-date";
 export const eventInputSchema = z
   .object({
+    recurrence: recurrenceSchema.nullable().optional(),
+    timeZone: zoneSchema.optional(),
     title: z.string().trim().min(1).max(200),
     description: z.string().trim().max(4000).default(""),
     location: z.string().trim().max(500).optional(),
@@ -19,6 +18,8 @@ export const eventInputSchema = z
   })
   .strict()
   .superRefine((event, ctx) => {
+    if (event.recurrence && !event.timeZone)
+      ctx.addIssue({ code: "custom", message: "Recurring events require a time zone." });
     const valid = (value: string) =>
       event.allDay ? validDate(value) : z.string().datetime().safeParse(value).success;
     if (
@@ -37,6 +38,8 @@ export const eventInputSchema = z
   });
 export type EventInput = z.infer<typeof eventInputSchema>;
 export const calendarEventSchema = z.object({
+  recurrence: recurrenceSchema.nullable().optional(),
+  timeZone: zoneSchema.optional(),
   id: z.string().uuid(),
   title: z.string(),
   description: z.string(),
@@ -50,6 +53,8 @@ export const calendarEventSchema = z.object({
 });
 export type CalendarEvent = z.infer<typeof calendarEventSchema>;
 export type EventDraft = {
+  recurrence?: Recurrence | null;
+  timeZone?: string;
   title: string;
   description: string;
   location?: string;
@@ -61,6 +66,8 @@ export type EventDraft = {
   source: "manual" | "ai";
 };
 export const emptyDraft = (): EventDraft => ({
+  recurrence: null,
+  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   title: "",
   description: "",
   location: "",
@@ -78,19 +85,17 @@ export function draftInput(draft: EventDraft): EventInput {
   const instant = (date: string, time: string) => {
     if (!validDate(date) || !/^\d{2}:\d{2}$/.test(time))
       throw new Error("Choose a date and time before saving.");
-    const value = new Date(`${date}T${time}:00`);
-    if (
-      Number.isNaN(value.getTime()) ||
-      localDate(value) !== date ||
-      `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}` !==
-        time
-    )
-      throw new Error("That local time does not exist. Choose another time.");
-    return value.toISOString();
+    return zonedInstant(
+      date,
+      time,
+      draft.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
   };
   if (!draft.allDay && !!draft.endDate !== !!draft.endTime)
     throw new Error("Provide both the end date and time, or leave both empty.");
   const result = eventInputSchema.safeParse({
+    recurrence: draft.recurrence ?? null,
+    timeZone: draft.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
     title: draft.title,
     description: draft.description,
     location: draft.location ?? "",
@@ -108,9 +113,13 @@ export function draftInput(draft: EventDraft): EventInput {
   return result.data;
 }
 export function eventDraft(event: CalendarEvent): EventDraft {
-  const date = (value: string) => (event.allDay ? value : localDate(new Date(value)));
-  const time = (value: string) => (event.allDay ? "" : new Date(value).toTimeString().slice(0, 5));
+  const zone = event.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const date = (value: string) => (event.allDay ? value : zonedParts(new Date(value), zone).date);
+  const time = (value: string) =>
+    event.allDay ? "" : zonedParts(new Date(value), zone).time.slice(0, 5);
   return {
+    recurrence: event.recurrence ?? null,
+    timeZone: zone,
     title: event.title,
     description: event.description,
     location: event.location ?? "",

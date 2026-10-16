@@ -1,3 +1,4 @@
+import { RecurrenceFields } from "./recurrence-fields";
 import { useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
@@ -187,6 +188,10 @@ export function ChatCalendarAction({
           {draft.location && <p>Location: {draft.location}</p>}
         </div>
       )}
+      <RecurrenceFields
+        value={draft.recurrence}
+        onChange={(recurrence) => setDraft({ ...draft, recurrence })}
+      />
       {!valid && (
         <p className="text-sm text-muted-foreground">
           Please complete or correct the date, time, and title above before confirming.

@@ -45,6 +45,8 @@ it("deletes an individual memory and shows the empty state", async () => {
   vi.mocked(memories.remove).mockResolvedValue({ enabled: true, memories: [] });
   setup();
   fireEvent.click(await screen.findByRole("button", { name: `Delete memory: ${saved.content}` }));
+  expect(memories.remove).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm memory deletion" }));
   expect(await screen.findByText("No saved memories yet.")).toBeInTheDocument();
   expect(memories.remove).toHaveBeenCalledWith(saved.id);
 });
