@@ -59,7 +59,7 @@ unavailable Ollama service or missing model are shown above the existing compose
 A partial response remains visible if streaming fails, but is excluded from the
 next request's conversation context.
 
-This milestone is for local development. A cloud-hosted Lovable server cannot
+This milestone is for local development. A cloud-hosted server cannot
 reach the Ollama service on your computer through its own loopback address.
 For a separately launched server, provide `OLLAMA_*` settings in its environment.
 
@@ -568,8 +568,7 @@ reviewed event creation through the local action router described below. Milesto
 external calendar integrations, invites, or cloud synchronization.
 
 Visible branding uses the existing Rebel AI wordmark and a matching original R
-favicon (SVG plus legacy ICO fallback). Lovable development/build integration and
-repository provenance remain; these are not user-facing product branding.
+favicon (SVG plus legacy ICO fallback).
 
 ## Calendar actions from normal chat
 

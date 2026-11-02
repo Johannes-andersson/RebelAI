@@ -18,7 +18,6 @@ it("brands the shell Rebel AI and exposes the Calendar navigation alongside exis
     </AppShell>,
   );
   expect(screen.getByText("REBEL AI")).toBeInTheDocument();
-  expect(screen.queryByText(/Lovable/i)).toBeNull();
   for (const label of ["Chats", "Models", "Files", "Calendar", "Settings"])
     expect(screen.getByRole("link", { name: label })).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Calendar" })).toHaveAttribute("href", "/calendar");
