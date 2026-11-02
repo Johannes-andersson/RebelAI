@@ -3,19 +3,9 @@
 A local AI chat prototype built with React and TanStack Start. Chat replies stream
 from Ollama through the app's local server, using the existing Rebel AI interface.
 
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/fd29d422-4954-440d-952f-0ad6d0d6cd9d).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
 ## Development
 
-Prefer working locally? You need Node.js 22.13 or newer and Bun 1.4.2. Bun is the dependency installer; Node runs the app and tests because the server uses `node:sqlite`. Keep `bun.lock` as the single dependency lockfile and use a frozen install to reproduce its versions.
+Local development requires Node.js 22.13 or newer and Bun 1.4.2. Bun is the dependency installer; Node runs the app and tests because the server uses `node:sqlite`. Keep `bun.lock` as the single dependency lockfile and use a frozen install to reproduce its versions.
 
 ```sh
 git clone <this-repository-url>
